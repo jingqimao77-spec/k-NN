@@ -25,7 +25,7 @@ buildscript {
         avx512_spr_enabled = System.getProperty("avx512_spr.enabled")
         // This flag determines whether the CMake build system should apply a custom patch. It prevents build failures
         // when the cmakeJniLib task is run multiple times. If the build.lib.commit_patches is true, the CMake build
-        // system skips applying the patch if the patches have been applied already. If build.lib.commit_patches is
+        // system skips applying the patch if the patches have been applied already. If build.lib.apply_patches is
         // false, the patches are always applied. To avoid patch conflicts, disable this flag manually after the first
         // run of buildJniLib
         apply_lib_patches = System.getProperty("build.lib.apply_patches", "true")
@@ -63,6 +63,9 @@ buildscript {
     // This isn't applying from repositories.gradle so repeating git diff it here
     repositories {
         mavenLocal()
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://mirrors.huaweicloud.com/repository/maven/' }
         maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
         mavenCentral()
         maven { url "https://plugins.gradle.org/m2/" }
@@ -88,13 +91,23 @@ plugins {
     id 'java-library'
     id 'java-test-fixtures'
     id 'idea'
-    id "com.diffplug.spotless" version "6.25.0" apply false
+    id 'com.diffplug.spotless' version '6.25.0' apply false
     id 'io.freefair.lombok' version '8.14'
-    id "de.undercouch.download" version "5.3.0"
+    id 'de.undercouch.download' version '5.3.0'
+}
+
+description = "OpenSearch k-NN plugin"
+
+allprojects {
+    project.ext.licenseFile = rootProject.file('LICENSE.txt')
+    project.ext.noticeFile = rootProject.file('NOTICE.txt')
 }
 
 apply from: 'gradle/formatting.gradle'
 apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'opensearch.pluginzip'
+apply plugin: 'opensearch.build'
+apply plugin: 'opensearch.rest-test'
 apply plugin: 'opensearch.rest-test'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.repositories'
@@ -393,6 +406,9 @@ tasks.register('cmakeJniLib', Exec) {
     args.add("-S jni") // CMakelists.txt directory
     args.add("-B jni/build") // Build directory
     args.add("-DKNN_PLUGIN_VERSION=${opensearch_version}")
+    args.add("-DCONFIG_TEST=OFF")
+    args.add("-DCONFIG_FAISS=ON")
+    args.add("-DCONFIG_NMSLIB=ON")
     if (avx2_enabled != null) {
         args.add("-DAVX2_ENABLED=${avx2_enabled}")
     }

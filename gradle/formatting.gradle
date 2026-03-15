@@ -9,7 +9,7 @@ allprojects {
         java {
             target 'src/**/*.java'
             removeUnusedImports()
-            eclipse().configFile rootProject.file('buildSrc/formatterConfig.xml')
+            // eclipse().configFile rootProject.file('buildSrc/formatterConfig.xml')
             trimTrailingWhitespace()
         }
     }

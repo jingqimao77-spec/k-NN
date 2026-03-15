@@ -15,6 +15,8 @@ plugins {
 
 repositories {
     mavenLocal()
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://mirrors.huaweicloud.com/repository/maven/' }
     maven { url = uri("https://ci.opensearch.org/ci/dbc/snapshots/maven/") }
     mavenCentral()
     maven { url = uri("https://plugins.gradle.org/m2/") }

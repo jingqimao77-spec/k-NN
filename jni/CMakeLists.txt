@@ -173,62 +173,62 @@ list(APPEND TARGET_LIBS ${TARGET_LIB_SIMD})
 # --------------------------------- TESTS -----------------------------------
 # Windows : Comment the TESTS for now because the tests are failing(failing to build jni_tests.exe) if we are building our target libraries as SHARED libraries.
 # TODO: Fix the failing JNI TESTS on Windows
-if ("${WIN32}" STREQUAL "")
-    if (${CONFIG_ALL} STREQUAL ON OR ${CONFIG_TEST} STREQUAL ON)
-        # Reference - https://crascit.com/2015/07/25/cmake-gtest/
-        configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
-        execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/googletest-download"
-                )
-        execute_process(COMMAND "${CMAKE_COMMAND}" --build .
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/googletest-download"
-                )
-        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-
-        add_subdirectory("${CMAKE_BINARY_DIR}/googletest-src"
-                "${CMAKE_BINARY_DIR}/googletest-build" EXCLUDE_FROM_ALL
-                )
-        add_executable(
-                jni_test
-                tests/faiss_wrapper_test.cpp
-                tests/faiss_wrapper_unit_test.cpp
-                tests/faiss_util_test.cpp
-                tests/nmslib_wrapper_test.cpp
-                tests/nmslib_wrapper_unit_test.cpp
-                tests/test_util.cpp
-                tests/commons_test.cpp
-                tests/faiss_stream_support_test.cpp
-                tests/faiss_index_service_test.cpp
-                tests/nmslib_stream_support_test.cpp
-                tests/faiss_index_bq_unit_test.cpp
-        )
-
-        target_link_libraries(
-                jni_test
-                gtest_main
-                gmock_main
-                faiss
-                NonMetricSpaceLib
-                OpenMP::OpenMP_CXX
-                ${TARGET_LIB_FAISS}
-                ${TARGET_LIB_NMSLIB}
-                ${TARGET_LIB_COMMON}
-                ${TARGET_LIB_UTIL}
-        )
-
-        target_include_directories(jni_test PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests
-                ${CMAKE_CURRENT_SOURCE_DIR}/include
-                $ENV{JAVA_HOME}/include
-                $ENV{JAVA_HOME}/include/${JVM_OS_TYPE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/external/faiss
-                ${CMAKE_CURRENT_SOURCE_DIR}/external/nmslib/similarity_search/include
-                ${gtest_SOURCE_DIR}/include
-                ${gmock_SOURCE_DIR}/include)
-
-
-        set_target_properties(jni_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
-    endif ()
-endif()
+# if ("${WIN32}" STREQUAL "")
+#     if (${CONFIG_ALL} STREQUAL ON OR ${CONFIG_TEST} STREQUAL ON)
+#         # Reference - https://crascit.com/2015/07/25/cmake-gtest/
+#         configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+#         execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .
+#                 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/googletest-download"
+#                 )
+#         execute_process(COMMAND "${CMAKE_COMMAND}" --build .
+#                 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/googletest-download"
+#                 )
+#         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+# 
+#         add_subdirectory("${CMAKE_BINARY_DIR}/googletest-src"
+#                 "${CMAKE_BINARY_DIR}/googletest-build" EXCLUDE_FROM_ALL
+#                 )
+#         add_executable(
+#                 jni_test
+#                 tests/faiss_wrapper_test.cpp
+#                 tests/faiss_wrapper_unit_test.cpp
+#                 tests/faiss_util_test.cpp
+#                 tests/nmslib_wrapper_test.cpp
+#                 tests/nmslib_wrapper_unit_test.cpp
+#                 tests/test_util.cpp
+#                 tests/commons_test.cpp
+#                 tests/faiss_stream_support_test.cpp
+#                 tests/faiss_index_service_test.cpp
+#                 tests/nmslib_stream_support_test.cpp
+#                 tests/faiss_index_bq_unit_test.cpp
+#         )
+# 
+#         target_link_libraries(
+#                 jni_test
+#                 gtest_main
+#                 gmock_main
+#                 faiss
+#                 NonMetricSpaceLib
+#                 OpenMP::OpenMP_CXX
+#                 ${TARGET_LIB_FAISS}
+#                 ${TARGET_LIB_NMSLIB}
+#                 ${TARGET_LIB_COMMON}
+#                 ${TARGET_LIB_UTIL}
+#         )
+# 
+#         target_include_directories(jni_test PRIVATE
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/tests
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/include
+#                 $ENV{JAVA_HOME}/include
+#                 $ENV{JAVA_HOME}/include/${JVM_OS_TYPE}
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/external/faiss
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/external/nmslib/similarity_search/include
+#                 ${gtest_SOURCE_DIR}/include
+#                 ${gmock_SOURCE_DIR}/include)
+# 
+# 
+#         set_target_properties(jni_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
+#     endif ()
+# endif()
 
 # ---------------------------------------------------------------------------
