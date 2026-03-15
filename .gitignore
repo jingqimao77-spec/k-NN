@@ -36,3 +36,7 @@ benchmarks/perf-tool/okpt/pyvenv.cfg
 benchmarks/perf-tool/okpt/env/
 benchmarks/perf-tool/okpt/venv/
 benchmarks/perf-tool/okpt/.pytype/
+
+# Ignore large so files
+jni/release/knowhere/*.so
+jni/release/knowhere/*.so.*
