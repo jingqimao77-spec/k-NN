@@ -100,6 +100,7 @@
 **可并行**：与 1/3/4 并行
 
 **实现**
+- 方案细化见 `docs/diskann_integration_task2_manifest_file_management.md`
 - 设计 manifest 文件格式（JSON 或 KV），至少包含：
   - 必需文件列表
   - 可选文件列表
@@ -111,11 +112,14 @@
   - 严格校验：必需文件缺失直接失败；未知文件记录告警但写入 manifest
 - `KNN80CompoundFormat` 增加 `.diskann_*` 的 copyFrom → `.diskann_*c` 处理
 - `KNNCodecUtil.getEngineFiles()`：通过 manifest 枚举文件
+- **未完成（遗留）**：JNI build 结束生成 manifest（依赖 Step 3 knowhere 接入）
 
 **验证**
 - SegmentInfo.files() 含 `.diskann_*`
 - compound 后存在 `.diskann_*c`，原 `.diskann_*` 删除
 - manifest 校验：必需文件缺失失败
+- non-compound 场景：不生成 `*.c`，读取 `.diskann_*` 原始文件
+- **遗留**：Build → Load → Search 端到端验证依赖 Step 3/4，待全部完成后统一执行
 
 ---
 
@@ -125,6 +129,7 @@
 **可并行**：与 1/2/4 并行
 
 **实现**
+- 方案细化见 `docs/diskann_integration_task3_jni_knowhere_access.md`
 - 新增 JNI so：`opensearchknn_knowhere`
 - JNI 接口：build/load/query/free
 - `JNIService` routing 增加 `KNNEngine.KNOWHERE`
@@ -173,11 +178,11 @@
 **实现**
 - Load：按 manifest 下载到本地 prefix
 - Search：JNI query 路径
-- Filter 不支持时 fallback exact search
+- 支持Filter
 
 **验证**
 - ANN search 返回 topK
-- filter fallback 正常
+- filter 正常
 
 ---
 
