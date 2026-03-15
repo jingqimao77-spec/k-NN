@@ -13,6 +13,7 @@ import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.faiss.Faiss;
+import org.opensearch.knn.index.engine.knowhere.Knowhere;
 import org.opensearch.knn.index.engine.faiss.FaissHNSWMethod;
 import org.opensearch.knn.index.engine.lucene.Lucene;
 import org.opensearch.knn.index.engine.nmslib.Nmslib;
@@ -30,6 +31,7 @@ import static org.opensearch.knn.common.KNNConstants.COMPOUND_EXTENSION;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_FLAT;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
 import static org.opensearch.knn.common.KNNConstants.FAISS_EXTENSION;
+import static org.opensearch.knn.common.KNNConstants.KNOWHERE_EXTENSION;
 import static org.opensearch.knn.common.KNNConstants.METHOD_ENCODER_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.METHOD_HNSW;
 import static org.opensearch.knn.common.KNNConstants.METHOD_IVF;
@@ -53,6 +55,7 @@ public class KNNEngineTests extends KNNTestCase {
         assertEquals(Nmslib.INSTANCE.getVersion(), KNNEngine.NMSLIB.getVersion());
         assertEquals(Faiss.INSTANCE.getVersion(), KNNEngine.FAISS.getVersion());
         assertEquals(Lucene.INSTANCE.getVersion(), KNNEngine.LUCENE.getVersion());
+        assertEquals(Knowhere.INSTANCE.getVersion(), KNNEngine.KNOWHERE.getVersion());
 
         // Validate that deprecated engines have correct deprecation versions
         assertTrue(KNNEngine.NMSLIB.getRestrictedFromVersion() != null);
@@ -100,6 +103,11 @@ public class KNNEngineTests extends KNNTestCase {
         assertEquals(KNNEngine.FAISS, KNNEngine.getEngineNameFromPath(faissPath1));
         String faissPath2 = "test" + FAISS_EXTENSION + COMPOUND_EXTENSION;
         assertEquals(KNNEngine.FAISS, KNNEngine.getEngineNameFromPath(faissPath2));
+
+        String knowherePath1 = "test" + KNOWHERE_EXTENSION;
+        assertEquals(KNNEngine.KNOWHERE, KNNEngine.getEngineNameFromPath(knowherePath1));
+        String knowherePath2 = "test" + KNOWHERE_EXTENSION + COMPOUND_EXTENSION;
+        assertEquals(KNNEngine.KNOWHERE, KNNEngine.getEngineNameFromPath(knowherePath2));
 
         String invalidPath = "test.invalid";
         expectThrows(IllegalArgumentException.class, () -> KNNEngine.getEngineNameFromPath(invalidPath));

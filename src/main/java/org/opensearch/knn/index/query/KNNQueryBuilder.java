@@ -56,6 +56,8 @@ import static org.opensearch.knn.common.KNNConstants.MAX_DISTANCE;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_EF_SEARCH;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_NPROBES;
+import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_SEARCH_LIST;
+import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_BEAMWIDTH;
 import static org.opensearch.knn.common.KNNConstants.MIN_SCORE;
 import static org.opensearch.knn.common.KNNValidationUtil.validateByteVectorValue;
 import static org.opensearch.knn.index.engine.KNNEngine.ENGINES_SUPPORTING_RADIAL_SEARCH;
@@ -82,6 +84,8 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
     public static final ParseField MIN_SCORE_FIELD = new ParseField(MIN_SCORE);
     public static final ParseField EF_SEARCH_FIELD = new ParseField(METHOD_PARAMETER_EF_SEARCH);
     public static final ParseField NPROBE_FIELD = new ParseField(METHOD_PARAMETER_NPROBES);
+    public static final ParseField SEARCH_LIST_FIELD = new ParseField(METHOD_PARAMETER_SEARCH_LIST);
+    public static final ParseField BEAMWIDTH_FIELD = new ParseField(METHOD_PARAMETER_BEAMWIDTH);
     public static final ParseField METHOD_PARAMS_FIELD = new ParseField(METHOD_PARAMETER);
     public static final ParseField RESCORE_FIELD = new ParseField(RESCORE_PARAMETER);
     public static final ParseField RESCORE_OVERSAMPLE_FIELD = new ParseField(RESCORE_OVERSAMPLE_PARAMETER);

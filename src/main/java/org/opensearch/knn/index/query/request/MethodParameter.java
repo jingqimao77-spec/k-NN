@@ -21,9 +21,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_EF_SEARCH;
+import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_BEAMWIDTH;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_NPROBES;
+import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_SEARCH_LIST;
 import static org.opensearch.knn.index.query.KNNQueryBuilder.EF_SEARCH_FIELD;
+import static org.opensearch.knn.index.query.KNNQueryBuilder.BEAMWIDTH_FIELD;
 import static org.opensearch.knn.index.query.KNNQueryBuilder.NPROBE_FIELD;
+import static org.opensearch.knn.index.query.KNNQueryBuilder.SEARCH_LIST_FIELD;
 
 /**
  * MethodParameters are engine and algorithm related parameters that clients can pass in knn query
@@ -67,6 +71,44 @@ public enum MethodParameter {
 
             ValidationException validationException = new ValidationException();
             validationException.addValidationError(METHOD_PARAMETER_NPROBES + " should be greater than 0");
+            return validationException;
+        }
+    },
+
+    SEARCH_LIST(METHOD_PARAMETER_SEARCH_LIST, Version.V_3_0_0, SEARCH_LIST_FIELD) {
+        @Override
+        public Integer parse(Object value) {
+            return parseInteger(value, METHOD_PARAMETER_SEARCH_LIST);
+        }
+
+        @Override
+        public ValidationException validate(Object value) {
+            final Integer searchList = parse(value);
+            if (searchList != null && searchList > 0) {
+                return null;
+            }
+
+            ValidationException validationException = new ValidationException();
+            validationException.addValidationError(METHOD_PARAMETER_SEARCH_LIST + " should be greater than 0");
+            return validationException;
+        }
+    },
+
+    BEAMWIDTH(METHOD_PARAMETER_BEAMWIDTH, Version.V_3_0_0, BEAMWIDTH_FIELD) {
+        @Override
+        public Integer parse(Object value) {
+            return parseInteger(value, METHOD_PARAMETER_BEAMWIDTH);
+        }
+
+        @Override
+        public ValidationException validate(Object value) {
+            final Integer beamwidth = parse(value);
+            if (beamwidth != null && beamwidth > 0) {
+                return null;
+            }
+
+            ValidationException validationException = new ValidationException();
+            validationException.addValidationError(METHOD_PARAMETER_BEAMWIDTH + " should be greater than 0");
             return validationException;
         }
     };

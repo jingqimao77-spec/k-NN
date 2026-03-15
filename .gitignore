@@ -5,7 +5,9 @@ buildSrc/libKNNIndex*
 
 .gradle/
 build
+.vscode/
 .idea/*
+opt/
 !.idea/codeStyles/codeStyleConfig.xml
 !.idea/copyright
 .DS_Store

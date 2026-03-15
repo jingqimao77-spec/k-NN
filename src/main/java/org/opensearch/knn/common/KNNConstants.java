@@ -37,6 +37,8 @@ public class KNNConstants {
     public static final String METHOD_IVF = "ivf";
     public static final String METHOD_PARAMETER_NLIST = "nlist";
     public static final String METHOD_PARAMETER_SPACE_TYPE = "space_type"; // used for mapping parameter
+    public static final String METHOD_PARAMETER_SEARCH_LIST = "search_list";
+    public static final String METHOD_PARAMETER_BEAMWIDTH = "beamwidth";
     // used for defining toplevel parameter
     public static final String TOP_LEVEL_PARAMETER_SPACE_TYPE = METHOD_PARAMETER_SPACE_TYPE;
     public static final String TOP_LEVEL_PARAMETER_ENGINE = KNN_ENGINE;
@@ -136,6 +138,23 @@ public class KNNConstants {
     public static final List<String> FAISS_SQ_ENCODER_TYPES = List.of(FAISS_SQ_ENCODER_FP16);
     public static final String FAISS_SIGNED_BYTE_SQ = "SQ8_direct_signed";
     public static final String FAISS_SQ_CLIP = "clip";
+
+    // Knowhere specific constants
+    public static final String KNOWHERE_NAME = "knowhere";
+    public static final String KNOWHERE_EXTENSION = ".knowhere";
+    public static final String METHOD_DISKANN = "diskann";
+
+    // DiskANN build parameters
+    public static final String DISKANN_MAX_DEGREE = "max_degree";
+    public static final String DISKANN_SEARCH_LIST_SIZE = "search_list_size";
+    public static final String DISKANN_PQ_CODE_BUDGET_GB_RATIO = "pq_code_budget_gb_ratio";
+    public static final String DISKANN_BUILD_DRAM_BUDGET_GB = "build_dram_budget_gb";
+    public static final String DISKANN_DISK_PQ_DIMS = "disk_pq_dims";
+    public static final String DISKANN_ACCELERATE_BUILD = "accelerate_build";
+    public static final String DISKANN_NUM_BUILD_THREAD = "num_build_thread";
+    public static final String DISKANN_SEARCH_CACHE_BUDGET_GB_RATIO = "search_cache_budget_gb_ratio";
+    public static final String DISKANN_WARM_UP = "warm_up";
+    public static final String DISKANN_USE_BFS_CACHE = "use_bfs_cache";
 
     // Parameter defaults/limits
     public static final Integer ENCODER_PARAMETER_PQ_CODE_COUNT_DEFAULT = 1;

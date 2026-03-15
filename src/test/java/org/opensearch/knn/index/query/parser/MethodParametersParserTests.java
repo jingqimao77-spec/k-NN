@@ -38,6 +38,12 @@ public class MethodParametersParserTests extends KNNTestCase {
 
         ValidationException validationException4 = validateMethodParameters(Map.of("nprobes", 0));
         assertTrue(validationException4.getMessage().contains("Validation Failed: 1: nprobes should be greater than 0"));
+
+        ValidationException validationException5 = validateMethodParameters(Map.of("search_list", 0));
+        assertTrue(validationException5.getMessage().contains("Validation Failed: 1: search_list should be greater than 0"));
+
+        ValidationException validationException6 = validateMethodParameters(Map.of("beamwidth", 0));
+        assertTrue(validationException6.getMessage().contains("Validation Failed: 1: beamwidth should be greater than 0"));
     }
 
     @SneakyThrows
@@ -93,5 +99,15 @@ public class MethodParametersParserTests extends KNNTestCase {
         builder = XContentFactory.jsonBuilder().startObject().field("nprobes", 10).endObject();
         XContentParser parser6 = createParser(builder);
         assertEquals(Map.of("nprobes", 10), MethodParametersParser.fromXContent(parser6));
+
+        // search_list Valid
+        builder = XContentFactory.jsonBuilder().startObject().field("search_list", 10).endObject();
+        XContentParser parser7 = createParser(builder);
+        assertEquals(Map.of("search_list", 10), MethodParametersParser.fromXContent(parser7));
+
+        // beamwidth Valid
+        builder = XContentFactory.jsonBuilder().startObject().field("beamwidth", 10).endObject();
+        XContentParser parser8 = createParser(builder);
+        assertEquals(Map.of("beamwidth", 10), MethodParametersParser.fromXContent(parser8));
     }
 }
