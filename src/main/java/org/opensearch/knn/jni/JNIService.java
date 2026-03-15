@@ -141,6 +141,12 @@ public class JNIService {
             return;
         }
 
+        if (KNNEngine.KNOWHERE == knnEngine) {
+            String indexPath = (String) parameters.get(KNNConstants.PATH);
+            KnowhereService.createIndex(ids, vectorsAddress, dim, indexPath, parameters);
+            return;
+        }
+
         throw new IllegalArgumentException(
             String.format(Locale.ROOT, "CreateIndex not supported for provided engine : %s", knnEngine.getName())
         );
@@ -206,6 +212,9 @@ public class JNIService {
             return FaissService.loadIndexWithStream(readStream);
         } else if (KNNEngine.NMSLIB == knnEngine) {
             return NmslibService.loadIndexWithStream(readStream, parameters);
+        } else if (KNNEngine.KNOWHERE == knnEngine) {
+            String indexPath = (String) parameters.get(KNNConstants.PATH);
+            return KnowhereService.loadIndex(indexPath, parameters);
         }
 
         throw new IllegalArgumentException(
@@ -308,6 +317,11 @@ public class JNIService {
             }
             return FaissService.queryIndex(indexPointer, queryVector, k, methodParameters, parentIds);
         }
+
+        if (KNNEngine.KNOWHERE == knnEngine) {
+            return KnowhereService.queryIndex(indexPointer, queryVector, k, methodParameters);
+        }
+
         throw new IllegalArgumentException(
             String.format(Locale.ROOT, "QueryIndex not supported for provided engine : %s", knnEngine.getName())
         );
@@ -376,6 +390,11 @@ public class JNIService {
 
         if (KNNEngine.FAISS == knnEngine) {
             FaissService.free(indexPointer, isBinaryIndex);
+            return;
+        }
+
+        if (KNNEngine.KNOWHERE == knnEngine) {
+            KnowhereService.free(indexPointer);
             return;
         }
 
