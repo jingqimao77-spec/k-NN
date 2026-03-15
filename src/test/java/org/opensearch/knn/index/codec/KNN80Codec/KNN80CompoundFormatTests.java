@@ -19,8 +19,10 @@ import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.codec.KNNCodecTestUtil;
 import org.opensearch.knn.index.codec.KNNCodecVersion;
 import org.opensearch.knn.index.engine.KNNEngine;
+import org.opensearch.knn.index.codec.util.KNNCodecUtil;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Set;
 
@@ -87,6 +89,60 @@ public class KNN80CompoundFormatTests extends KNNTestCase {
         knn80CompoundFormat.write(directory, segmentInfo, IOContext.DEFAULT);
 
         assertTrue(segmentInfo.files().isEmpty());
+
+        Arrays.stream(directory.listAll()).forEach(filename -> {
+            try {
+                directory.deleteFile(filename);
+            } catch (IOException e) {
+                fail(String.format("Failed to delete: %s", filename));
+            }
+        });
+    }
+
+    public void testWriteKnowhereCopiesDiskannFiles() throws IOException {
+        String segmentName = "_test";
+        String fieldName = "field";
+
+        String manifestFile = KNNCodecUtil.buildEngineFileName(
+            segmentName,
+            KNNEngine.KNOWHERE.getVersion(),
+            fieldName,
+            KNNEngine.KNOWHERE.getExtension()
+        );
+        String diskannFile = String.format("%s_%s_%s.diskann_pq_pivots.bin", segmentName, KNNEngine.KNOWHERE.getVersion(), fieldName);
+        String manifestJson = "{"
+            + "\"version\":1,"
+            + "\"engine\":\"knowhere\","
+            + "\"method\":\"diskann\","
+            + "\"index_prefix\":\"" + segmentName + "_" + KNNEngine.KNOWHERE.getVersion() + "_" + fieldName + ".diskann\","
+            + "\"files\":[{\"name\":\"" + diskannFile + "\",\"required\":true}]"
+            + "}";
+
+        SegmentInfo segmentInfo = KNNCodecTestUtil.segmentInfoBuilder()
+            .directory(directory)
+            .segmentName(segmentName)
+            .docsInSegment(1)
+            .codec(codec)
+            .build();
+
+        try (IndexOutput manifestOutput = directory.createOutput(manifestFile, IOContext.DEFAULT)) {
+            byte[] bytes = manifestJson.getBytes(StandardCharsets.UTF_8);
+            manifestOutput.writeBytes(bytes, 0, bytes.length);
+        }
+        IndexOutput diskannOutput = directory.createOutput(diskannFile, IOContext.DEFAULT);
+        diskannOutput.close();
+
+        Set<String> segmentFiles = Set.of(manifestFile, diskannFile);
+        segmentInfo.setFiles(segmentFiles);
+
+        CompoundFormat delegate = mock(CompoundFormat.class);
+        doNothing().when(delegate).write(directory, segmentInfo, IOContext.DEFAULT);
+
+        KNN80CompoundFormat knn80CompoundFormat = new KNN80CompoundFormat(delegate);
+        knn80CompoundFormat.write(directory, segmentInfo, IOContext.DEFAULT);
+
+        assertTrue(Arrays.asList(directory.listAll()).contains(manifestFile + "c"));
+        assertTrue(Arrays.asList(directory.listAll()).contains(diskannFile + "c"));
 
         Arrays.stream(directory.listAll()).forEach(filename -> {
             try {

@@ -63,9 +63,18 @@ public class DefaultKNNWeight extends KNNWeight {
         final List<String> engineFiles = KNNCodecUtil.getEngineFiles(
             knnEngine.getExtension(),
             knnQuery.getField(),
-            reader.getSegmentInfo().info
+            reader.getSegmentInfo().info,
+            reader.directory()
         );
-        final String vectorIndexFileName = engineFiles.get(0);
+        final String vectorIndexFileName;
+        if (knnEngine == KNNEngine.KNOWHERE) {
+            vectorIndexFileName = KNNCodecUtil.getNativeEngineFileFromFieldInfo(fieldInfo, reader.getSegmentInfo().info);
+            if (vectorIndexFileName == null) {
+                throw new IllegalStateException("Unable to determine native engine file for cache key");
+            }
+        } else {
+            vectorIndexFileName = engineFiles.get(0);
+        }
         final String cacheKey = NativeMemoryCacheKeyHelper.constructCacheKey(vectorIndexFileName, reader.getSegmentInfo().info);
 
         final Version segmentLuceneVersion = reader.getSegmentInfo().info.getVersion();

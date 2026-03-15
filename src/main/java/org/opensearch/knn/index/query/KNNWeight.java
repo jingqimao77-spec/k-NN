@@ -485,7 +485,12 @@ public abstract class KNNWeight extends Weight {
             knnQuery.getField()
         );
 
-        List<String> engineFiles = KNNCodecUtil.getEngineFiles(knnEngine.getExtension(), knnQuery.getField(), reader.getSegmentInfo().info);
+        List<String> engineFiles = KNNCodecUtil.getEngineFiles(
+            knnEngine.getExtension(),
+            knnQuery.getField(),
+            reader.getSegmentInfo().info,
+            reader.directory()
+        );
         if (engineFiles.isEmpty()) {
             log.debug("[KNN] No native engine files found for field {} for segment {}", knnQuery.getField(), reader.getSegmentName());
             return EMPTY_TOPDOCS;
@@ -702,7 +707,8 @@ public abstract class KNNWeight extends Weight {
         final List<String> engineFiles = KNNCodecUtil.getEngineFiles(
             knnEngine.getExtension(),
             knnQuery.getField(),
-            reader.getSegmentInfo().info
+            reader.getSegmentInfo().info,
+            reader.directory()
         );
         return engineFiles.isEmpty();
     }

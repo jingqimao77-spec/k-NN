@@ -76,7 +76,8 @@ public class MemoryOptimizedSearchWarmup {
         final List<String> engineFiles = KNNCodecUtil.getEngineFiles(
             knnEngine.getExtension(),
             field.getName(),
-            segmentReader.getSegmentInfo().info
+            segmentReader.getSegmentInfo().info,
+            directory
         );
         if (engineFiles.isEmpty()) {
             log.warn("Could not find an engine file for field [{}]", field.getName());

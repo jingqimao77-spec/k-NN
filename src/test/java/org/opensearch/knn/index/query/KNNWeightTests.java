@@ -524,7 +524,7 @@ public class KNNWeightTests extends KNNWeightTestCase {
 
         try (MockedStatic<KNNCodecUtil> knnCodecUtilMockedStatic = mockStatic(KNNCodecUtil.class)) {
             List<String> engineFiles = List.of("_0_1_target_field.faiss");
-            knnCodecUtilMockedStatic.when(() -> KNNCodecUtil.getEngineFiles(anyString(), anyString(), eq(segmentInfo)))
+            knnCodecUtilMockedStatic.when(() -> KNNCodecUtil.getEngineFiles(anyString(), anyString(), eq(segmentInfo), any()))
                 .thenReturn(engineFiles);
 
             try (MockedStatic<SegmentLevelQuantizationUtil> quantizationUtilMockedStatic = mockStatic(SegmentLevelQuantizationUtil.class)) {
@@ -1641,7 +1641,12 @@ public class KNNWeightTests extends KNNWeightTestCase {
 
         String engineName = fieldInfo.attributes().getOrDefault(KNN_ENGINE, KNNEngine.NMSLIB.getName());
         KNNEngine knnEngine = KNNEngine.getEngine(engineName);
-        List<String> engineFiles = KNNCodecUtil.getEngineFiles(knnEngine.getExtension(), query.getField(), reader.getSegmentInfo().info);
+        List<String> engineFiles = KNNCodecUtil.getEngineFiles(
+            knnEngine.getExtension(),
+            query.getField(),
+            reader.getSegmentInfo().info,
+            reader.directory()
+        );
         String expectIndexPath = String.format("%s_%s_%s%s%s", SEGMENT_NAME, 2011, FIELD_NAME, knnEngine.getExtension(), "c");
         assertEquals(engineFiles.get(0), expectIndexPath);
 

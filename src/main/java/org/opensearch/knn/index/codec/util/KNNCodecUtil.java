@@ -10,17 +10,20 @@ import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.SegmentInfo;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.store.Directory;
 import org.opensearch.knn.common.FieldInfoExtractor;
 import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.KNN80Codec.KNN80BinaryDocValues;
 import org.opensearch.knn.index.engine.KNNEngine;
+import org.opensearch.knn.index.engine.knowhere.KnowhereManifest;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.io.UncheckedIOException;
 
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapper.KNN_FIELD;
 
@@ -77,20 +80,35 @@ public class KNNCodecUtil {
      * @param segmentInfo {@link SegmentInfo} One Segment info to use for compute.
      * @return List of engine files
      */
-    public static List<String> getEngineFiles(String extension, String fieldName, SegmentInfo segmentInfo) {
+    public static List<String> getEngineFiles(String extension, String fieldName, SegmentInfo segmentInfo, Directory directory) {
         /*
          * In case of compound file, extension would be <engine-extension> + c otherwise <engine-extension>
          */
-        String engineExtension = segmentInfo.getUseCompoundFile() ? extension + KNNConstants.COMPOUND_EXTENSION : extension;
-        String engineSuffix = fieldName + engineExtension;
-        String underLineEngineSuffix = "_" + engineSuffix;
+        List<String> engineFiles = getEngineFilesFromSegment(extension, fieldName, segmentInfo);
+        if (!KNNConstants.KNOWHERE_EXTENSION.equals(extension)) {
+            return engineFiles;
+        }
 
-        List<String> engineFiles = segmentInfo.files()
-            .stream()
-            .filter(fileName -> fileName.endsWith(underLineEngineSuffix))
-            .sorted(Comparator.comparingInt(String::length))
-            .collect(Collectors.toList());
-        return engineFiles;
+        if (engineFiles.isEmpty()) {
+            return engineFiles;
+        }
+
+        if (directory == null) {
+            throw new IllegalStateException("Directory is required to read knowhere manifest");
+        }
+
+        final String manifestFileName = engineFiles.get(0);
+        try {
+            List<String> diskannFiles = KnowhereManifest.readDiskannFiles(directory, manifestFileName);
+            if (segmentInfo.getUseCompoundFile()) {
+                return diskannFiles.stream()
+                    .map(fileName -> fileName + KNNConstants.COMPOUND_EXTENSION)
+                    .collect(Collectors.toList());
+            }
+            return diskannFiles;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read knowhere manifest: " + manifestFileName, e);
+        }
     }
 
     /**
@@ -110,13 +128,14 @@ public class KNNCodecUtil {
         if (knnEngine == null) {
             return null;
         }
-        final List<String> engineFiles = KNNCodecUtil.getEngineFiles(knnEngine.getExtension(), field.getName(), segmentInfo);
+        if (KNNEngine.KNOWHERE == knnEngine) {
+            return getEngineManifestFile(knnEngine.getExtension(), field.getName(), segmentInfo);
+        }
+        final List<String> engineFiles = KNNCodecUtil.getEngineFiles(knnEngine.getExtension(), field.getName(), segmentInfo, null);
         if (engineFiles.isEmpty()) {
             return null;
-        } else {
-            final String vectorIndexFileName = engineFiles.get(0);
-            return vectorIndexFileName;
         }
+        return engineFiles.get(0);
     }
 
     /**
@@ -156,5 +175,25 @@ public class KNNCodecUtil {
             return engine;
         }
         return null;
+    }
+
+    private static List<String> getEngineFilesFromSegment(String extension, String fieldName, SegmentInfo segmentInfo) {
+        String engineExtension = segmentInfo.getUseCompoundFile() ? extension + KNNConstants.COMPOUND_EXTENSION : extension;
+        String engineSuffix = fieldName + engineExtension;
+        String underLineEngineSuffix = "_" + engineSuffix;
+
+        return segmentInfo.files()
+            .stream()
+            .filter(fileName -> fileName.endsWith(underLineEngineSuffix))
+            .sorted(Comparator.comparingInt(String::length))
+            .collect(Collectors.toList());
+    }
+
+    private static String getEngineManifestFile(String extension, String fieldName, SegmentInfo segmentInfo) {
+        List<String> engineFiles = getEngineFilesFromSegment(extension, fieldName, segmentInfo);
+        if (engineFiles.isEmpty()) {
+            return null;
+        }
+        return engineFiles.get(0);
     }
 }
