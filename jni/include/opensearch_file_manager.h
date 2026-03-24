@@ -10,15 +10,18 @@
 #define OPENSEARCH_KNN_JNI_OPENSEARCH_FILE_MANAGER_H
 
 #include "jni_util.h"
+#include "knowhere/file_manager.h"
 #include "native_engines_stream_support.h"
 
+#include <filesystem>
 #include <jni.h>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace knn_jni {
 
-class OpenSearchFileManager {
+class OpenSearchFileManager : public knowhere::FileManager {
  public:
   OpenSearchFileManager(JNIUtilInterface *jni_interface,
                         JNIEnv *env,
@@ -28,10 +31,14 @@ class OpenSearchFileManager {
 
   ~OpenSearchFileManager();
 
-  bool AddFile(const std::string &filename);
-  bool LoadFile(const std::string &filename);
-  std::optional<bool> IsExisted(const std::string &filename);
-  bool RemoveFile(const std::string &filename);
+  bool AddFile(const std::string &filename) noexcept override;
+  bool LoadFile(const std::string &filename) noexcept override;
+  std::optional<bool> IsExisted(const std::string &filename) noexcept override;
+  bool RemoveFile(const std::string &filename) noexcept override;
+
+  std::vector<std::string> AddedFiles() const;
+  bool SyncTrackedFilesToDirectory();
+  bool MaterializeFilesFromDirectory(const std::vector<std::string> &file_names, bool use_compound_suffix = false);
 
  private:
   JNIEnv *GetEnv();
@@ -40,6 +47,8 @@ class OpenSearchFileManager {
   void CloseCloseable(jobject closeable);
   std::string GetLuceneFileName(const std::string &filename) const;
   std::string GetLocalFilePath(const std::string &filename) const;
+  bool CopyLocalFileToDirectory(const std::string &filename);
+  bool CopyLuceneFileToLocal(const std::string &lucene_file_name, const std::string &target_local_path);
 
   static jclass GetDirectoryClass(JNIUtilInterface *jni_interface, JNIEnv *env);
   static jclass GetIndexInputClass(JNIUtilInterface *jni_interface, JNIEnv *env);
@@ -59,7 +68,8 @@ class OpenSearchFileManager {
   JavaVM *jvm_;
   jobject directory_global_;
   jobject io_context_global_;
-  std::string local_data_path_;
+  std::filesystem::path root_dir_;
+  std::vector<std::string> added_files_;
 };
 
 }  // namespace knn_jni

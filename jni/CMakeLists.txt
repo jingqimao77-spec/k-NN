@@ -85,7 +85,7 @@ add_library(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/commons.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/opensearch_file_manager.cpp
 )
-target_include_directories(${TARGET_LIB_UTIL} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include $ENV{JAVA_HOME}/include $ENV{JAVA_HOME}/include/${JVM_OS_TYPE})
+target_include_directories(${TARGET_LIB_UTIL} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/external/knowhere/include $ENV{JAVA_HOME}/include $ENV{JAVA_HOME}/include/${JVM_OS_TYPE})
 opensearch_set_common_properties(${TARGET_LIB_UTIL})
 list(APPEND TARGET_LIBS ${TARGET_LIB_UTIL})
 # ----------------------------------------------------------------------------

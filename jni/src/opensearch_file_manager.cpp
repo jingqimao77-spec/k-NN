@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <system_error>
 #include <vector>
 
 namespace knn_jni {
@@ -25,7 +26,7 @@ OpenSearchFileManager::OpenSearchFileManager(JNIUtilInterface *jni_interface,
       jvm_(nullptr),
       directory_global_(nullptr),
       io_context_global_(nullptr),
-      local_data_path_(local_data_path) {
+      root_dir_(local_data_path) {
   if (jni_interface_ == nullptr || env == nullptr || directory == nullptr || io_context == nullptr) {
     throw std::invalid_argument("OpenSearchFileManager requires non-null JNI parameters");
   }
@@ -66,147 +67,183 @@ JNIEnv *OpenSearchFileManager::GetEnv() {
   return nullptr;
 }
 
-bool OpenSearchFileManager::AddFile(const std::string &filename) {
-  JNIEnv *env = GetEnv();
-  if (env == nullptr) {
-    return false;
-  }
+bool OpenSearchFileManager::AddFile(const std::string &filename) noexcept {
   try {
-    const std::string local_path = GetLocalFilePath(filename);
+    const auto local_path = std::filesystem::path(GetLocalFilePath(filename));
     if (!std::filesystem::exists(local_path)) {
       return false;
     }
-    const std::string lucene_file = GetLuceneFileName(filename);
-    std::ifstream input(local_path, std::ios::binary);
-    if (!input.is_open()) {
-      return false;
-    }
-
-    jobject index_output = CreateIndexOutput(lucene_file);
-    if (index_output == nullptr) {
-      return false;
-    }
-
-    jclass output_with_buffer_class = GetIndexOutputWithBufferClass(jni_interface_, env);
-    jmethodID output_with_buffer_ctor = GetIndexOutputWithBufferCtor(jni_interface_, env);
-    jobject output_with_buffer = env->NewObject(output_with_buffer_class, output_with_buffer_ctor, index_output);
-    jni_interface_->HasExceptionInStack(env, "Failed to create IndexOutputWithBuffer");
-
-    knn_jni::stream::NativeEngineIndexOutputMediator mediator(jni_interface_, env, output_with_buffer);
-    std::vector<uint8_t> buffer(64 * 1024);
-    while (input.good()) {
-      input.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
-      std::streamsize read_bytes = input.gcount();
-      if (read_bytes > 0) {
-        mediator.writeBytes(buffer.data(), static_cast<size_t>(read_bytes));
-      }
-    }
-    mediator.flush();
-
-    CloseCloseable(index_output);
-    env->DeleteLocalRef(index_output);
-    env->DeleteLocalRef(output_with_buffer);
+    added_files_.push_back(local_path.filename().string());
     return true;
   } catch (...) {
-    jni_interface_->CatchCppExceptionAndThrowJava(env);
     return false;
   }
 }
 
-bool OpenSearchFileManager::LoadFile(const std::string &filename) {
-  JNIEnv *env = GetEnv();
-  if (env == nullptr) {
-    return false;
-  }
+bool OpenSearchFileManager::LoadFile(const std::string &filename) noexcept {
   try {
-    const std::string local_path = GetLocalFilePath(filename);
-    if (std::filesystem::exists(local_path)) {
-      return true;
-    }
-    const std::string lucene_file = GetLuceneFileName(filename);
-    std::ofstream output(local_path, std::ios::binary | std::ios::trunc);
-    if (!output.is_open()) {
-      return false;
-    }
-
-    jobject index_input = OpenIndexInput(lucene_file);
-    if (index_input == nullptr) {
-      return false;
-    }
-
-    jclass input_with_buffer_class = GetIndexInputWithBufferClass(jni_interface_, env);
-    jmethodID input_with_buffer_ctor = GetIndexInputWithBufferCtor(jni_interface_, env);
-    jobject input_with_buffer = env->NewObject(input_with_buffer_class, input_with_buffer_ctor, index_input);
-    jni_interface_->HasExceptionInStack(env, "Failed to create IndexInputWithBuffer");
-
-    knn_jni::stream::NativeEngineIndexInputMediator mediator(jni_interface_, env, input_with_buffer);
-    std::vector<uint8_t> buffer(64 * 1024);
-    while (true) {
-      int64_t remaining = mediator.remainingBytes();
-      if (remaining <= 0) {
-        break;
-      }
-      const int64_t to_read = std::min<int64_t>(remaining, buffer.size());
-      mediator.copyBytes(to_read, buffer.data());
-      output.write(reinterpret_cast<const char *>(buffer.data()), to_read);
-    }
-
-    CloseCloseable(index_input);
-    env->DeleteLocalRef(index_input);
-    env->DeleteLocalRef(input_with_buffer);
-    return true;
+    return std::filesystem::exists(GetLocalFilePath(filename));
   } catch (...) {
-    jni_interface_->CatchCppExceptionAndThrowJava(env);
     return false;
   }
 }
 
-std::optional<bool> OpenSearchFileManager::IsExisted(const std::string &filename) {
-  JNIEnv *env = GetEnv();
-  if (env == nullptr) {
-    return std::nullopt;
-  }
+std::optional<bool> OpenSearchFileManager::IsExisted(const std::string &filename) noexcept {
   try {
-    const std::string lucene_file = GetLuceneFileName(filename);
-  jmethodID list_all_method = GetDirectoryListAllMethod(jni_interface_, env);
-    jobjectArray files_array = (jobjectArray) env->CallObjectMethod(directory_global_, list_all_method);
-    jni_interface_->HasExceptionInStack(env, "Failed to list directory files");
-
-    jsize length = env->GetArrayLength(files_array);
-    for (jsize i = 0; i < length; i++) {
-      jstring file_j = (jstring) env->GetObjectArrayElement(files_array, i);
-      std::string file_name = jni_interface_->ConvertJavaStringToCppString(env, file_j);
-      env->DeleteLocalRef(file_j);
-      if (file_name == lucene_file) {
-        env->DeleteLocalRef(files_array);
-        return true;
-      }
-    }
-    env->DeleteLocalRef(files_array);
-    return false;
+    return std::make_optional<bool>(std::filesystem::exists(GetLocalFilePath(filename)));
   } catch (...) {
-    jni_interface_->CatchCppExceptionAndThrowJava(env);
     return std::nullopt;
   }
 }
 
-bool OpenSearchFileManager::RemoveFile(const std::string &filename) {
+bool OpenSearchFileManager::RemoveFile(const std::string &filename) noexcept {
+  try {
+    std::error_code ec;
+    const auto local_path = std::filesystem::path(GetLocalFilePath(filename));
+    const auto basename = local_path.filename().string();
+    added_files_.erase(std::remove(added_files_.begin(), added_files_.end(), basename), added_files_.end());
+    return std::filesystem::remove(local_path, ec) || !std::filesystem::exists(local_path);
+  } catch (...) {
+    return false;
+  }
+}
+
+std::vector<std::string> OpenSearchFileManager::AddedFiles() const {
+  return added_files_;
+}
+
+bool OpenSearchFileManager::SyncTrackedFilesToDirectory() {
   JNIEnv *env = GetEnv();
   if (env == nullptr) {
     return false;
   }
   try {
-    const std::string lucene_file = GetLuceneFileName(filename);
-    jstring file_j = env->NewStringUTF(lucene_file.c_str());
-    jmethodID delete_method = GetDirectoryDeleteFileMethod(jni_interface_, env);
-    env->CallVoidMethod(directory_global_, delete_method, file_j);
-    jni_interface_->HasExceptionInStack(env, "Failed to delete file from directory");
-    env->DeleteLocalRef(file_j);
+    for (const auto &file_name : added_files_) {
+      if (!CopyLocalFileToDirectory(file_name)) {
+        return false;
+      }
+    }
     return true;
   } catch (...) {
     jni_interface_->CatchCppExceptionAndThrowJava(env);
     return false;
   }
+}
+
+bool OpenSearchFileManager::MaterializeFilesFromDirectory(const std::vector<std::string> &file_names,
+                                                          bool use_compound_suffix) {
+  JNIEnv *env = GetEnv();
+  if (env == nullptr) {
+    return false;
+  }
+  try {
+    for (const auto &file_name : file_names) {
+      const std::string lucene_file_name = use_compound_suffix ? file_name + "c" : file_name;
+      const auto source_local_path = std::filesystem::path(GetLocalFilePath(lucene_file_name));
+      const auto target_local_path = std::filesystem::path(GetLocalFilePath(file_name));
+      if (!CopyLuceneFileToLocal(lucene_file_name, source_local_path.string())) {
+        return false;
+      }
+      if (use_compound_suffix && source_local_path != target_local_path) {
+        std::error_code ec;
+        std::filesystem::rename(source_local_path, target_local_path, ec);
+        if (ec) {
+          throw std::runtime_error("Failed to rename knowhere compound artifact locally: " + source_local_path.string());
+        }
+      }
+    }
+    return true;
+  } catch (...) {
+    jni_interface_->CatchCppExceptionAndThrowJava(env);
+    return false;
+  }
+}
+
+bool OpenSearchFileManager::CopyLocalFileToDirectory(const std::string &filename) {
+  JNIEnv *env = GetEnv();
+  if (env == nullptr) {
+    return false;
+  }
+
+  const std::string local_path = GetLocalFilePath(filename);
+  if (!std::filesystem::exists(local_path)) {
+    return false;
+  }
+  const std::string lucene_file = GetLuceneFileName(filename);
+  std::ifstream input(local_path, std::ios::binary);
+  if (!input.is_open()) {
+    return false;
+  }
+
+  jobject index_output = CreateIndexOutput(lucene_file);
+  if (index_output == nullptr) {
+    return false;
+  }
+
+  jclass output_with_buffer_class = GetIndexOutputWithBufferClass(jni_interface_, env);
+  jmethodID output_with_buffer_ctor = GetIndexOutputWithBufferCtor(jni_interface_, env);
+  jobject output_with_buffer = env->NewObject(output_with_buffer_class, output_with_buffer_ctor, index_output);
+  jni_interface_->HasExceptionInStack(env, "Failed to create IndexOutputWithBuffer");
+
+  knn_jni::stream::NativeEngineIndexOutputMediator mediator(jni_interface_, env, output_with_buffer);
+  std::vector<uint8_t> buffer(64 * 1024);
+  while (input.good()) {
+    input.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
+    std::streamsize read_bytes = input.gcount();
+    if (read_bytes > 0) {
+      mediator.writeBytes(buffer.data(), static_cast<size_t>(read_bytes));
+    }
+  }
+  mediator.flush();
+
+  CloseCloseable(index_output);
+  env->DeleteLocalRef(index_output);
+  env->DeleteLocalRef(output_with_buffer);
+  return true;
+}
+
+bool OpenSearchFileManager::CopyLuceneFileToLocal(const std::string &lucene_file_name, const std::string &target_local_path) {
+  JNIEnv *env = GetEnv();
+  if (env == nullptr) {
+    return false;
+  }
+
+  if (std::filesystem::exists(target_local_path)) {
+    return true;
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(std::filesystem::path(target_local_path).parent_path(), ec);
+  std::ofstream output(target_local_path, std::ios::binary | std::ios::trunc);
+  if (!output.is_open()) {
+    return false;
+  }
+
+  jobject index_input = OpenIndexInput(lucene_file_name);
+  if (index_input == nullptr) {
+    return false;
+  }
+
+  jclass input_with_buffer_class = GetIndexInputWithBufferClass(jni_interface_, env);
+  jmethodID input_with_buffer_ctor = GetIndexInputWithBufferCtor(jni_interface_, env);
+  jobject input_with_buffer = env->NewObject(input_with_buffer_class, input_with_buffer_ctor, index_input);
+  jni_interface_->HasExceptionInStack(env, "Failed to create IndexInputWithBuffer");
+
+  knn_jni::stream::NativeEngineIndexInputMediator mediator(jni_interface_, env, input_with_buffer);
+  std::vector<uint8_t> buffer(64 * 1024);
+  while (true) {
+    int64_t remaining = mediator.remainingBytes();
+    if (remaining <= 0) {
+      break;
+    }
+    const int64_t to_read = std::min<int64_t>(remaining, buffer.size());
+    mediator.copyBytes(to_read, buffer.data());
+    output.write(reinterpret_cast<const char *>(buffer.data()), to_read);
+  }
+
+  CloseCloseable(index_input);
+  env->DeleteLocalRef(index_input);
+  env->DeleteLocalRef(input_with_buffer);
+  return true;
 }
 
 jobject OpenSearchFileManager::OpenIndexInput(const std::string &lucene_file_name) {
@@ -255,8 +292,7 @@ std::string OpenSearchFileManager::GetLocalFilePath(const std::string &filename)
   if (path.is_absolute()) {
     return path.string();
   }
-  std::filesystem::path base(local_data_path_);
-  return (base / path).string();
+  return (root_dir_ / path.filename()).string();
 }
 
 jclass OpenSearchFileManager::GetDirectoryClass(JNIUtilInterface *jni_interface, JNIEnv *env) {

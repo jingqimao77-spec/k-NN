@@ -83,56 +83,6 @@ struct ManifestInfo {
     std::vector<std::string> files;
 };
 
-class LocalKnowhereFileManager : public knowhere::FileManager {
-public:
-    explicit LocalKnowhereFileManager(std::filesystem::path root_dir) : root_dir_(std::move(root_dir)) {}
-
-    bool
-    LoadFile(const std::string& filename) noexcept override {
-        return std::filesystem::exists(LocalPath(filename));
-    }
-
-    bool
-    AddFile(const std::string& filename) noexcept override {
-        const auto local_path = LocalPath(filename);
-        if (!std::filesystem::exists(local_path)) {
-            return false;
-        }
-        added_files_.push_back(local_path.filename().string());
-        return true;
-    }
-
-    std::optional<bool>
-    IsExisted(const std::string& filename) noexcept override {
-        return std::filesystem::exists(LocalPath(filename));
-    }
-
-    bool
-    RemoveFile(const std::string& filename) noexcept override {
-        std::error_code ec;
-        const auto local_path = LocalPath(filename);
-        return std::filesystem::remove(local_path, ec) || !std::filesystem::exists(local_path);
-    }
-
-    std::vector<std::string>
-    AddedFiles() const {
-        return added_files_;
-    }
-
-private:
-    std::filesystem::path
-    LocalPath(const std::string& filename) const {
-        std::filesystem::path path(filename);
-        if (path.is_absolute()) {
-            return path;
-        }
-        return root_dir_ / path.filename();
-    }
-
-    std::filesystem::path root_dir_;
-    std::vector<std::string> added_files_;
-};
-
 std::string
 GetRawDataPath(const std::string& index_prefix) {
     return index_prefix + ".raw_data";
@@ -368,60 +318,15 @@ GetWrapperContext(JNIUtilInterface* jniUtil, JNIEnv* env, jobject wrapperJ, cons
     return context;
 }
 
-std::shared_ptr<LocalKnowhereFileManager>
-CreateLocalFileManager(const std::filesystem::path& local_data_dir) {
-    return std::make_shared<LocalKnowhereFileManager>(local_data_dir);
-}
-
 void
 ReleaseWrapperContext(JNIEnv* env, const WrapperContext& context) {
     env->DeleteLocalRef(context.directory);
     env->DeleteLocalRef(context.io_context);
 }
 
-void
-CopyLocalFilesToDirectory(JNIUtilInterface* jniUtil,
-                          JNIEnv* env,
-                          const WrapperContext& context,
-                          const std::filesystem::path& local_data_dir,
-                          const std::vector<std::string>& file_names) {
-    OpenSearchFileManager manager(jniUtil, env, context.directory, context.io_context, local_data_dir.string());
-    for (const auto& file_name : file_names) {
-        const auto local_path = local_data_dir / file_name;
-        if (!manager.AddFile(local_path.string())) {
-            throw std::runtime_error("Failed to copy knowhere artifact into Lucene directory: " + local_path.string());
-        }
-    }
-}
-
 bool
 HasSuffix(const std::string& value, const std::string& suffix) {
     return value.size() >= suffix.size() && value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-void
-CopyDirectoryFilesToLocal(JNIUtilInterface* jniUtil,
-                          JNIEnv* env,
-                          const WrapperContext& context,
-                          const std::filesystem::path& local_data_dir,
-                          const std::vector<std::string>& file_names,
-                          bool use_compound_suffix = false) {
-    OpenSearchFileManager manager(jniUtil, env, context.directory, context.io_context, local_data_dir.string());
-    for (const auto& file_name : file_names) {
-        const std::string lucene_file_name = use_compound_suffix ? file_name + "c" : file_name;
-        const auto source_local_path = local_data_dir / lucene_file_name;
-        const auto target_local_path = local_data_dir / file_name;
-        if (!manager.LoadFile(source_local_path.string())) {
-            throw std::runtime_error("Failed to copy knowhere artifact from Lucene directory: " + file_name);
-        }
-        if (use_compound_suffix && source_local_path != target_local_path) {
-            std::error_code ec;
-            std::filesystem::rename(source_local_path, target_local_path, ec);
-            if (ec) {
-                throw std::runtime_error("Failed to rename knowhere compound artifact locally: " + source_local_path.string());
-            }
-        }
-    }
 }
 
 void
@@ -547,7 +452,8 @@ void CreateIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jintArray idsJ, jlong v
 
     WriteRawDataFile(json["data_path"].get<std::string>(), vectors, static_cast<uint32_t>(rows), static_cast<uint32_t>(dim));
 
-    auto file_manager = CreateLocalFileManager(local_data_dir);
+    auto file_manager = std::make_shared<OpenSearchFileManager>(
+        jniUtil, env, context.directory, context.io_context, local_data_dir.string());
 
     auto diskann_index_pack = knowhere::Pack(std::static_pointer_cast<knowhere::FileManager>(file_manager));
 
@@ -591,7 +497,9 @@ void CreateIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jintArray idsJ, jlong v
     if (status != knowhere::Status::success) {
         throw std::runtime_error("Failed to build knowhere index: " + knowhere::Status2String(status));
     }
-    CopyLocalFilesToDirectory(jniUtil, env, context, local_data_dir, file_manager->AddedFiles());
+    if (!file_manager->SyncTrackedFilesToDirectory()) {
+        throw std::runtime_error("Failed to copy knowhere artifacts into Lucene directory");
+    }
     ReleaseWrapperContext(env, context);
 
     const auto manifest_path = local_data_dir / context.file_name;
@@ -616,13 +524,16 @@ jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, job
 
     WrapperContext context = GetWrapperContext(jniUtil, env, readStreamJ, "org/opensearch/knn/index/store/IndexInputWithBuffer");
     const auto local_data_dir = CreateUniqueTempDir("opensearch-knn-knowhere-load");
-    auto file_manager = CreateLocalFileManager(local_data_dir);
+    auto file_manager = std::make_shared<OpenSearchFileManager>(
+        jniUtil, env, context.directory, context.io_context, local_data_dir.string());
 
     LOG(INFO) << "[KNN][KNOWHERE][LoadIndex] manifest_file=" << context.file_name
               << " local_data_dir=" << local_data_dir.string()
               << " params_before_manifest=" << json.dump();
 
-    CopyDirectoryFilesToLocal(jniUtil, env, context, local_data_dir, { context.file_name });
+    if (!file_manager->MaterializeFilesFromDirectory({ context.file_name })) {
+        throw std::runtime_error("Failed to copy knowhere manifest from Lucene directory: " + context.file_name);
+    }
 
     const auto manifest = ReadManifest(local_data_dir / context.file_name);
     LOG(INFO) << "[KNN][KNOWHERE][LoadIndex] manifest_index_prefix=" << manifest.index_prefix
@@ -631,7 +542,9 @@ jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, job
         LOG(INFO) << "[KNN][KNOWHERE][LoadIndex] manifest_file_entry=" << manifest_file;
     }
     const bool use_compound_sidecars = HasSuffix(context.file_name, ".knowherec");
-    CopyDirectoryFilesToLocal(jniUtil, env, context, local_data_dir, manifest.files, use_compound_sidecars);
+    if (!file_manager->MaterializeFilesFromDirectory(manifest.files, use_compound_sidecars)) {
+        throw std::runtime_error("Failed to copy knowhere artifacts from Lucene directory for manifest " + context.file_name);
+    }
     ReleaseWrapperContext(env, context);
     json[knowhere::meta::INDEX_PREFIX] = (local_data_dir / manifest.index_prefix).string();
 
