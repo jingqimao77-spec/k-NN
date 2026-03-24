@@ -15,24 +15,16 @@
 #pragma once
 
 #include <algorithm>
-#include <boost/iterator/iterator_facade.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <type_traits>
 #include <vector>
 
-#include "knowhere/expected.h"
 #include "knowhere/object.h"
 #include "knowhere/operands.h"
 
 namespace knowhere::sparse {
-
-enum class SparseMetricType {
-    METRIC_IP = 1,
-    METRIC_BM25 = 2,
-};
 
 // integer type in SparseRow
 using table_t = uint32_t;
@@ -42,55 +34,6 @@ using label_t = int64_t;
 
 template <typename T>
 using SparseIdVal = IdVal<table_t, T>;
-
-// DocValueComputer takes a value of a doc vector and returns the a computed
-// value that can be used to multiply directly with the corresponding query
-// value. The second parameter is the document length of the database vector,
-// which is used in BM25.
-template <typename T>
-using DocValueComputer = std::function<float(const T&, const float)>;
-
-template <typename T>
-auto
-GetDocValueOriginalComputer() {
-    static DocValueComputer<T> lambda = [](const T& right, const float) -> float { return right; };
-    return lambda;
-}
-
-template <typename T>
-auto
-GetDocValueBM25Computer(float k1, float b, float avgdl) {
-    return [k1, b, avgdl](const T& tf, const float doc_len) -> float {
-        return tf * (k1 + 1) / (tf + k1 * (1 - b + b * (doc_len / avgdl)));
-    };
-}
-
-// A docid filter that tests whether a given id is in the list of docids, which is regarded as another form of BitSet.
-// Note that all ids to be tested must be tested exactly once and in order.
-class DocIdFilterByVector {
- public:
-    DocIdFilterByVector(std::vector<table_t>&& docids) : docids_(std::move(docids)) {
-        std::sort(docids_.begin(), docids_.end());
-    }
-
-    [[nodiscard]] bool
-    test(const table_t id) {
-        // find the first id that is greater than or equal to the specific id
-        while (pos_ < docids_.size() && docids_[pos_] < id) {
-            ++pos_;
-        }
-        return !(pos_ < docids_.size() && docids_[pos_] == id);
-    }
-
-    [[nodiscard]] bool
-    empty() const {
-        return docids_.empty();
-    }
-
- private:
-    std::vector<table_t> docids_;
-    size_t pos_ = 0;
-};
 
 template <typename T>
 class SparseRow {
@@ -103,15 +46,6 @@ class SparseRow {
     }
 
     SparseRow(size_t count, uint8_t* data, bool own_data) : data_(data), count_(count), own_data_(own_data) {
-    }
-
-    SparseRow(const std::vector<std::pair<table_t, T>>& data) : count_(data.size()), own_data_(true) {
-        data_ = new uint8_t[count_ * element_size()];
-        for (size_t i = 0; i < count_; ++i) {
-            auto* elem = reinterpret_cast<ElementProxy*>(data_) + i;
-            elem->index = data[i].first;
-            elem->value = data[i].second;
-        }
     }
 
     // copy constructor and copy assignment operator perform deep copy
@@ -189,20 +123,13 @@ class SparseRow {
 
     void
     set_at(size_t i, table_t index, T value) {
-        if (i >= count_) {
-            throw std::out_of_range("set_at on a SparseRow with invalid index");
-        }
         auto* elem = reinterpret_cast<ElementProxy*>(data_) + i;
         elem->index = index;
         elem->value = value;
     }
 
-    // In the case of asymetric distance functions, this should be the query
-    // and the other should be the database vector. For example using BM25, we
-    // should call query_vec.dot(doc_vec) instead of doc_vec.dot(query_vec).
-    template <typename Computer = DocValueComputer<T>>
     float
-    dot(const SparseRow<T>& other, Computer computer = GetDocValueOriginalComputer<T>(), const T other_sum = 0) const {
+    dot(const SparseRow<T>& other) const {
         float product_sum = 0.0f;
         size_t i = 0;
         size_t j = 0;
@@ -216,7 +143,7 @@ class SparseRow {
             } else if (left->index > right->index) {
                 ++j;
             } else {
-                product_sum += left->value * computer(right->value, other_sum);
+                product_sum += left->value * right->value;
                 ++i;
                 ++j;
             }
@@ -318,141 +245,5 @@ class MaxMinHeap {
     size_t size_ = 0, capacity_;
     std::vector<SparseIdVal<T>> pool_;
 };  // class MaxMinHeap
-
-// A std::vector like container but uses fixed size free memory(typically from
-// mmap) as backing store and can only be appended at the end.
-//
-// Must be initialized with a valid pointer to memory when used. The memory must be
-// valid during the lifetime of this object. After initialization, GrowableVectorView will
-// have space for mmap_element_count_ elements, none of which are initialized.
-//
-// Currently only used in sparse InvertedIndex. Move to other places if needed.
-template <typename T>
-class GrowableVectorView {
- public:
-    using value_type = T;
-    using size_type = size_t;
-
-    GrowableVectorView() = default;
-
-    void
-    initialize(void* data, size_type byte_size) {
-        if (byte_size % sizeof(T) != 0) {
-            throw std::invalid_argument("GrowableVectorView byte_size must be a multiple of element size");
-        }
-        mmap_data_ = data;
-        mmap_byte_size_ = byte_size;
-        mmap_element_count_ = 0;
-    }
-
-    [[nodiscard]] size_type
-    capacity() const {
-        return mmap_byte_size_ / sizeof(T);
-    }
-
-    [[nodiscard]] size_type
-    size() const {
-        return mmap_element_count_;
-    }
-
-    template <typename... Args>
-    T&
-    emplace_back(Args&&... args) {
-        if (size() == capacity()) {
-            throw std::out_of_range("emplace_back on a full GrowableVectorView");
-        }
-        auto* elem = reinterpret_cast<T*>(mmap_data_) + mmap_element_count_++;
-        return *new (elem) T(std::forward<Args>(args)...);
-    }
-
-    T&
-    operator[](size_type i) {
-        return reinterpret_cast<T*>(mmap_data_)[i];
-    }
-
-    const T&
-    operator[](size_type i) const {
-        return reinterpret_cast<const T*>(mmap_data_)[i];
-    }
-
-    T&
-    at(size_type i) {
-        if (i >= mmap_element_count_) {
-            throw std::out_of_range("GrowableVectorView index out of range");
-        }
-        return reinterpret_cast<T*>(mmap_data_)[i];
-    }
-
-    const T*
-    data() const {
-        return reinterpret_cast<const T*>(mmap_data_);
-    }
-
-    const T&
-    at(size_type i) const {
-        if (i >= mmap_element_count_) {
-            throw std::out_of_range("GrowableVectorView index out of range");
-        }
-        return reinterpret_cast<const T*>(mmap_data_)[i];
-    }
-
-    class iterator : public boost::iterator_facade<iterator, T, boost::random_access_traversal_tag, T&> {
-     public:
-        iterator() = default;
-        explicit iterator(T* ptr) : ptr_(ptr) {
-        }
-
-        friend class GrowableVectorView;
-        friend class boost::iterator_core_access;
-
-        T&
-        dereference() const {
-            return *ptr_;
-        }
-
-        void
-        increment() {
-            ++ptr_;
-        }
-
-        void
-        decrement() {
-            --ptr_;
-        }
-
-        void
-        advance(std::ptrdiff_t n) {
-            ptr_ += n;
-        }
-
-        std::ptrdiff_t
-        distance_to(const iterator& other) const {
-            return other.ptr_ - ptr_;
-        }
-
-        bool
-        equal(const iterator& other) const {
-            return ptr_ == other.ptr_;
-        }
-
-     private:
-        T* ptr_ = nullptr;
-    };
-
-    iterator
-    begin() const {
-        return iterator(reinterpret_cast<T*>(mmap_data_));
-    }
-
-    iterator
-    end() const {
-        return iterator(reinterpret_cast<T*>(mmap_data_) + mmap_element_count_);
-    }
-
- private:
-    void* mmap_data_ = nullptr;
-    size_type mmap_byte_size_ = 0;
-    size_type mmap_element_count_ = 0;
-};
 
 }  // namespace knowhere::sparse

@@ -73,6 +73,9 @@ bool OpenSearchFileManager::AddFile(const std::string &filename) {
   }
   try {
     const std::string local_path = GetLocalFilePath(filename);
+    if (!std::filesystem::exists(local_path)) {
+      return false;
+    }
     const std::string lucene_file = GetLuceneFileName(filename);
     std::ifstream input(local_path, std::ios::binary);
     if (!input.is_open()) {
@@ -117,6 +120,9 @@ bool OpenSearchFileManager::LoadFile(const std::string &filename) {
   }
   try {
     const std::string local_path = GetLocalFilePath(filename);
+    if (std::filesystem::exists(local_path)) {
+      return true;
+    }
     const std::string lucene_file = GetLuceneFileName(filename);
     std::ofstream output(local_path, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {

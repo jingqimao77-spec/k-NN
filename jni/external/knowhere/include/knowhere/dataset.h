@@ -21,14 +21,13 @@
 #include <variant>
 
 #include "comp/index_param.h"
-#include "knowhere/range_util.h"
 #include "knowhere/sparse_utils.h"
 
 namespace knowhere {
 
 class DataSet : public std::enable_shared_from_this<const DataSet> {
  public:
-    using Var = std::variant<const float*, const size_t*, const int64_t*, const void*, int64_t, std::string, std::any>;
+    typedef std::variant<const float*, const size_t*, const int64_t*, const void*, int64_t, std::string, std::any> Var;
     DataSet() = default;
     ~DataSet() {
         if (!is_owner) {
@@ -58,34 +57,8 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
                 if (ptr != nullptr) {
                     if (is_sparse) {
                         delete[](sparse::SparseRow<float>*)(*ptr);
-                    } else if (is_chunk) {
-                        for (auto i = 0; i < num_chunk; i += 1) {
-                            delete[]((char**)(*ptr))[i];
-                        }
-                        delete[](char**)(*ptr);
                     } else {
                         delete[](char*)(*ptr);
-                    }
-                }
-            }
-            {
-                auto any_ptr = std::get_if<6>(&x.second);
-                if (any_ptr != nullptr) {
-                    try {
-                        auto ptr = std::any_cast<size_t*>(*any_ptr);
-                        if (ptr != nullptr) {
-                            delete[] ptr;
-                        }
-                    } catch (const std::bad_any_cast&) {
-                        try {
-                            // handle knowhere::meta::EMB_LIST_OFFSET (const size_t*)
-                            auto const_ptr = std::any_cast<const size_t*>(*any_ptr);
-                            if (const_ptr != nullptr) {
-                                delete[] const_ptr;
-                            }
-                        } catch (const std::bad_any_cast&) {
-                            // Not a size_t* or const size_t*, ignore
-                        }
                     }
                 }
             }
@@ -99,43 +72,15 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
     }
 
     void
-    SetDistance(std::unique_ptr<float[]>&& dis) {
-        std::unique_lock lock(mutex_);
-        this->data_[meta::DISTANCE] = Var(std::in_place_index<0>, dis.release());
-    }
-
-    void
     SetLims(const size_t* lims) {
         std::unique_lock lock(mutex_);
         this->data_[meta::LIMS] = Var(std::in_place_index<1>, lims);
     }
 
     void
-    SetLims(std::unique_ptr<size_t[]>&& lims) {
-        std::unique_lock lock(mutex_);
-        this->data_[meta::LIMS] = Var(std::in_place_index<1>, lims.release());
-    }
-
-    void
     SetIds(const int64_t* ids) {
         std::unique_lock lock(mutex_);
         this->data_[meta::IDS] = Var(std::in_place_index<2>, ids);
-    }
-
-    void
-    SetIds(std::unique_ptr<long int[]>&& ids) {
-        static_assert(sizeof(long int) == sizeof(int64_t));
-
-        std::unique_lock lock(mutex_);
-        this->data_[meta::IDS] = Var(std::in_place_index<2>, reinterpret_cast<int64_t*>(ids.release()));
-    }
-
-    void
-    SetIds(std::unique_ptr<long long int[]>&& ids) {
-        static_assert(sizeof(long long int) == sizeof(int64_t));
-
-        std::unique_lock lock(mutex_);
-        this->data_[meta::IDS] = Var(std::in_place_index<2>, reinterpret_cast<int64_t*>(ids.release()));
     }
 
     /**
@@ -149,13 +94,6 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
         this->data_[meta::TENSOR] = Var(std::in_place_index<3>, tensor);
     }
 
-    template <typename T>
-    void
-    SetTensor(std::unique_ptr<T[]>&& tensor) {
-        std::unique_lock lock(mutex_);
-        this->data_[meta::TENSOR] = Var(std::in_place_index<3>, tensor.release());
-    }
-
     void
     SetRows(const int64_t rows) {
         std::unique_lock lock(mutex_);
@@ -166,12 +104,6 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
     SetDim(const int64_t dim) {
         std::unique_lock lock(mutex_);
         this->data_[meta::DIM] = Var(std::in_place_index<4>, dim);
-    }
-
-    void
-    SetTensorBeginId(const int64_t offset) {
-        std::unique_lock lock(mutex_);
-        this->data_[meta::INPUT_BEG_ID] = Var(std::in_place_index<4>, offset);
     }
 
     void
@@ -281,7 +213,7 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
     }
 
     bool
-    GetIsSparse() const {
+    GetIsSparse() {
         std::unique_lock lock(mutex_);
         return this->is_sparse;
     }
@@ -290,41 +222,6 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
     SetIsSparse(bool is_sparse) {
         std::unique_lock lock(mutex_);
         this->is_sparse = is_sparse;
-    }
-
-    bool
-    GetIsChunk() const {
-        std::unique_lock lock(mutex_);
-        return this->is_chunk;
-    }
-
-    void
-    SetIsChunk(bool is_chunk) {
-        std::unique_lock lock(mutex_);
-        this->is_chunk = is_chunk;
-    }
-
-    int64_t
-    GetNumChunk() const {
-        std::unique_lock lock(mutex_);
-        return this->num_chunk;
-    }
-
-    void
-    SetNumChunk(int64_t num_chunk) {
-        std::unique_lock lock(mutex_);
-        this->num_chunk = num_chunk;
-    }
-
-    int64_t
-    GetTensorBeginId() const {
-        std::shared_lock lock(mutex_);
-        auto it = this->data_.find(meta::INPUT_BEG_ID);
-        if (it != this->data_.end()) {
-            int64_t res = *std::get_if<4>(&it->second);
-            return res;
-        }
-        return 0;
     }
 
     // deprecated API
@@ -337,7 +234,7 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
 
     template <typename T>
     T
-    Get(const std::string& k) const {
+    Get(const std::string& k) {
         std::shared_lock lock(mutex_);
         auto it = this->data_.find(k);
         if (it != this->data_.end()) {
@@ -351,19 +248,15 @@ class DataSet : public std::enable_shared_from_this<const DataSet> {
     std::map<std::string, Var> data_;
     bool is_owner = true;
     bool is_sparse = false;
-    bool is_chunk = false;
-    int64_t num_chunk = 1;
 };
 using DataSetPtr = std::shared_ptr<DataSet>;
-
 inline DataSetPtr
-GenDataSet(const int64_t nb, const int64_t dim, const void* xb, const int64_t beg_id = 0) {
+GenDataSet(const int64_t nb, const int64_t dim, const void* xb) {
     auto ret_ds = std::make_shared<DataSet>();
     ret_ds->SetRows(nb);
     ret_ds->SetDim(dim);
     ret_ds->SetTensor(xb);
     ret_ds->SetIsOwner(false);
-    ret_ds->SetTensorBeginId(beg_id);
     return ret_ds;
 }
 
@@ -391,58 +284,17 @@ GenResultDataSet(const int64_t rows, const int64_t dim, const void* tensor) {
     return ret_ds;
 }
 
-template <typename T>
-inline DataSetPtr
-GenResultDataSet(const int64_t rows, const int64_t dim, std::unique_ptr<T[]>&& tensor) {
-    auto ret_ds = std::make_shared<DataSet>();
-    ret_ds->SetRows(rows);
-    ret_ds->SetDim(dim);
-    ret_ds->SetTensor(std::move(tensor));
-    ret_ds->SetIsOwner(true);
-    return ret_ds;
-}
-
 inline DataSetPtr
 #ifdef NOT_COMPILE_FOR_SWIG
 GenResultDataSet(const int64_t nq, const int64_t topk, const int64_t* ids, const float* distance) {
 #else
 GenResultDataSet(const int64_t nq, const int64_t topk, const void* ids, const float* distance) {
 #endif
-    static_assert(sizeof(int64_t) == sizeof(long long int));
-
     auto ret_ds = std::make_shared<DataSet>();
     ret_ds->SetRows(nq);
     ret_ds->SetDim(topk);
     ret_ds->SetIds((const int64_t*)ids);
     ret_ds->SetDistance(distance);
-    ret_ds->SetIsOwner(true);
-    return ret_ds;
-}
-
-inline DataSetPtr
-GenResultDataSet(const int64_t nq, const int64_t topk, std::unique_ptr<long int[]>&& ids,
-                 std::unique_ptr<float[]>&& distance) {
-    static_assert(sizeof(int64_t) == sizeof(long int));
-
-    auto ret_ds = std::make_shared<DataSet>();
-    ret_ds->SetRows(nq);
-    ret_ds->SetDim(topk);
-    ret_ds->SetIds(std::move(ids));
-    ret_ds->SetDistance(std::move(distance));
-    ret_ds->SetIsOwner(true);
-    return ret_ds;
-}
-
-inline DataSetPtr
-GenResultDataSet(const int64_t nq, const int64_t topk, std::unique_ptr<long long int[]>&& ids,
-                 std::unique_ptr<float[]>&& distance) {
-    static_assert(sizeof(int64_t) == sizeof(long long int));
-
-    auto ret_ds = std::make_shared<DataSet>();
-    ret_ds->SetRows(nq);
-    ret_ds->SetDim(topk);
-    ret_ds->SetIds(std::move(ids));
-    ret_ds->SetDistance(std::move(distance));
     ret_ds->SetIsOwner(true);
     return ret_ds;
 }
@@ -458,17 +310,6 @@ GenResultDataSet(const int64_t nq, const void* ids, const float* distance, const
     ret_ds->SetIds((const int64_t*)ids);
     ret_ds->SetDistance(distance);
     ret_ds->SetLims((const size_t*)lims);
-    ret_ds->SetIsOwner(true);
-    return ret_ds;
-}
-
-inline DataSetPtr
-GenResultDataSet(const int64_t nq, RangeSearchResult&& range_search_result) {
-    auto ret_ds = std::make_shared<DataSet>();
-    ret_ds->SetRows(nq);
-    ret_ds->SetIds(std::move(range_search_result.labels));
-    ret_ds->SetDistance(std::move(range_search_result.distances));
-    ret_ds->SetLims(std::move(range_search_result.lims));
     ret_ds->SetIsOwner(true);
     return ret_ds;
 }

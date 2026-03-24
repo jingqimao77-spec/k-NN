@@ -37,7 +37,7 @@ enum class Status {
     disk_file_error = 15,
     invalid_value_in_json = 16,
     arithmetic_overflow = 17,
-    cuvs_inner_error = 18,
+    raft_inner_error = 18,
     invalid_binary_set = 19,
     invalid_instruction_set = 20,
     cardinal_inner_error = 21,
@@ -45,13 +45,6 @@ enum class Status {
     invalid_index_error = 23,
     invalid_cluster_error = 24,
     cluster_inner_error = 25,
-    timeout = 26,
-    internal_error = 27,
-    invalid_serialized_index_type = 28,
-    sparse_inner_error = 29,
-    brute_force_inner_error = 30,
-    emb_list_inner_error = 31,
-    aisaq_error = 32,
 };
 
 inline std::string
@@ -89,7 +82,7 @@ Status2String(knowhere::Status status) {
             return "invalid value in json";
         case knowhere::Status::arithmetic_overflow:
             return "arithmetic overflow";
-        case knowhere::Status::cuvs_inner_error:
+        case knowhere::Status::raft_inner_error:
             return "raft inner error";
         case knowhere::Status::invalid_binary_set:
             return "invalid binary set";
@@ -101,18 +94,6 @@ Status2String(knowhere::Status status) {
             return "invalid cluster type";
         case knowhere::Status::cluster_inner_error:
             return "cluster inner error";
-        case knowhere::Status::internal_error:
-            return "internal error (something that must not have happened at all)";
-        case knowhere::Status::invalid_serialized_index_type:
-            return "the serialized index type is not recognized";
-        case knowhere::Status::sparse_inner_error:
-            return "sparse index inner error";
-        case knowhere::Status::brute_force_inner_error:
-            return "brute_force inner error";
-        case knowhere::Status::emb_list_inner_error:
-            return "emb_list inner error";
-        case knowhere::Status::aisaq_error:
-            return "internal AiSAQ error";
         default:
             return "unexpected status";
     }
@@ -138,11 +119,6 @@ class expected {
     bool
     has_value() const {
         return val.has_value();
-    }
-
-    bool
-    unexpected() {
-        return err != knowhere::Status::success;
     }
 
     Status

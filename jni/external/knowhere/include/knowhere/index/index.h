@@ -17,9 +17,8 @@
 #include "knowhere/dataset.h"
 #include "knowhere/expected.h"
 #include "knowhere/index/index_node.h"
-#include "knowhere/index/interrupt.h"
-namespace knowhere {
 
+namespace knowhere {
 template <typename T1>
 class Index {
  public:
@@ -140,43 +139,31 @@ class Index {
     }
 
     Status
-    Build(const DataSetPtr dataset, const Json& json, bool use_knowhere_build_pool = true);
-
-#ifdef KNOWHERE_WITH_CARDINAL
-    const std::shared_ptr<Interrupt>
-    BuildAsync(const DataSetPtr dataset, const Json& json,
-               const std::chrono::seconds timeout = std::chrono::seconds::max());
-#else
-    const std::shared_ptr<Interrupt>
-    BuildAsync(const DataSetPtr dataset, const Json& json, bool use_knowhere_build_pool = true);
-#endif
+    Build(const DataSet& dataset, const Json& json);
 
     Status
-    Train(const DataSetPtr dataset, const Json& json, bool use_knowhere_build_pool = true);
+    Train(const DataSet& dataset, const Json& json);
 
     Status
-    Add(const DataSetPtr dataset, const Json& json, bool use_knowhere_build_pool = true);
+    Add(const DataSet& dataset, const Json& json);
 
     expected<DataSetPtr>
-    Search(const DataSetPtr dataset, const Json& json, const BitsetView& bitset,
-           milvus::OpContext* op_context = nullptr) const;
+    Search(const DataSet& dataset, const Json& json, const BitsetView& bitset) const;
 
-    expected<std::vector<IndexNode::IteratorPtr>>
-    AnnIterator(const DataSetPtr dataset, const Json& json, const BitsetView& bitset,
-                bool use_knowhere_search_pool = true, milvus::OpContext* op_context = nullptr) const;
+    expected<std::vector<std::shared_ptr<IndexNode::iterator>>>
+    AnnIterator(const DataSet& dataset, const Json& json, const BitsetView& bitset) const;
 
     expected<DataSetPtr>
-    RangeSearch(const DataSetPtr dataset, const Json& json, const BitsetView& bitset,
-                milvus::OpContext* op_context = nullptr) const;
+    RangeSearch(const DataSet& dataset, const Json& json, const BitsetView& bitset) const;
 
     expected<DataSetPtr>
-    GetVectorByIds(const DataSetPtr dataset, milvus::OpContext* op_context = nullptr) const;
+    GetVectorByIds(const DataSet& dataset) const;
 
     bool
     HasRawData(const std::string& metric_type) const;
 
     bool
-    IsAdditionalScalarSupported(bool is_mv_only) const;
+    IsAdditionalScalarSupported() const;
 
     expected<DataSetPtr>
     GetIndexMeta(const Json& json) const;
@@ -202,17 +189,12 @@ class Index {
     std::string
     Type() const;
 
-    [[nodiscard]] bool
-    LoadIndexWithStream() const;
-
     ~Index() {
         if (node == nullptr)
             return;
         node->DecRef();
-        if (!node->Ref()) {
+        if (!node->Ref())
             delete node;
-            node = nullptr;
-        }
     }
 
  private:

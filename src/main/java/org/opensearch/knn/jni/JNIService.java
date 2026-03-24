@@ -142,8 +142,7 @@ public class JNIService {
         }
 
         if (KNNEngine.KNOWHERE == knnEngine) {
-            String indexPath = (String) parameters.get(KNNConstants.PATH);
-            KnowhereService.createIndex(ids, vectorsAddress, dim, indexPath, parameters);
+            KnowhereService.createIndex(ids, vectorsAddress, dim, output, parameters);
             return;
         }
 
@@ -213,8 +212,7 @@ public class JNIService {
         } else if (KNNEngine.NMSLIB == knnEngine) {
             return NmslibService.loadIndexWithStream(readStream, parameters);
         } else if (KNNEngine.KNOWHERE == knnEngine) {
-            String indexPath = (String) parameters.get(KNNConstants.PATH);
-            return KnowhereService.loadIndex(indexPath, parameters);
+            return KnowhereService.loadIndex(readStream, parameters);
         }
 
         throw new IllegalArgumentException(

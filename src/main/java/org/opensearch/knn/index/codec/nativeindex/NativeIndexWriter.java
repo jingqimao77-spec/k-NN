@@ -141,7 +141,7 @@ public class NativeIndexWriter {
             knnEngine.getExtension()
         );
         try (IndexOutput output = state.directory.createOutput(engineFileName, state.context)) {
-            final IndexOutputWithBuffer indexOutputWithBuffer = new IndexOutputWithBuffer(output);
+            final IndexOutputWithBuffer indexOutputWithBuffer = new IndexOutputWithBuffer(output, state.directory, state.context, engineFileName);
             final BuildIndexParams nativeIndexParams = indexParams(
                 fieldInfo,
                 indexOutputWithBuffer,
@@ -157,7 +157,9 @@ public class NativeIndexWriter {
                 nativeIndexParams
             );
             indexBuilder.buildAndWriteIndex(nativeIndexParams);
-            CodecUtil.writeFooter(output);
+            if (knnEngine != KNNEngine.KNOWHERE) {
+                CodecUtil.writeFooter(output);
+            }
         }
     }
 

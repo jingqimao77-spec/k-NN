@@ -43,17 +43,17 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_KnowhereService_initLibrary(J
     }
 }
 
-JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_KnowhereService_createIndex(JNIEnv *env, jclass cls, jintArray idsJ, jlong vectorsAddressJ, jint dimJ, jstring indexPathJ, jobject parametersJ) {
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_KnowhereService_createIndex(JNIEnv *env, jclass cls, jintArray idsJ, jlong vectorsAddressJ, jint dimJ, jobject outputJ, jobject parametersJ) {
     try {
-        knn_jni::knowhere_wrapper::CreateIndex(&jniUtil, env, idsJ, vectorsAddressJ, dimJ, indexPathJ, parametersJ);
+        knn_jni::knowhere_wrapper::CreateIndex(&jniUtil, env, idsJ, vectorsAddressJ, dimJ, outputJ, parametersJ);
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }
 }
 
-JNIEXPORT jlong JNICALL Java_org_opensearch_knn_jni_KnowhereService_loadIndex(JNIEnv *env, jclass cls, jstring indexPathJ, jobject parametersJ) {
+JNIEXPORT jlong JNICALL Java_org_opensearch_knn_jni_KnowhereService_loadIndex(JNIEnv *env, jclass cls, jobject readStreamJ, jobject parametersJ) {
     try {
-        return knn_jni::knowhere_wrapper::LoadIndex(&jniUtil, env, indexPathJ, parametersJ);
+        return knn_jni::knowhere_wrapper::LoadIndex(&jniUtil, env, readStreamJ, parametersJ);
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }

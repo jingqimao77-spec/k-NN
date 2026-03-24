@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+#include "knowhere/config.h"
 #include "opentelemetry/trace/provider.h"
 
 #define TRACE_SERVICE_KNOWHERE "knowhere"
@@ -23,9 +24,9 @@ namespace knowhere::tracer {
 struct TraceConfig {
     std::string exporter;
     float sampleFraction;
+    std::string jaegerURL;
     std::string otlpEndpoint;
-    std::string otlpMethod;  // "grpc" (default) or "http"
-    bool otlpSecure;
+    bool oltpSecure;
 
     int nodeID;
 };
@@ -61,10 +62,7 @@ EmptyTraceID(const TraceContext* ctx);
 bool
 EmptySpanID(const TraceContext* ctx);
 
-std::string
-BytesToHexStr(const uint8_t* data, size_t len);
-
-std::string
-GetIDFromHexStr(const std::string& hexStr);
+tracer::TraceContext
+GetTraceCtxFromCfg(const BaseConfig* cfg);
 
 }  // namespace knowhere::tracer

@@ -21,8 +21,7 @@ namespace knowhere {
 namespace {
 static constexpr int32_t default_version = 0;
 static constexpr int32_t minimal_version = 0;
-static constexpr int32_t current_version = 10;
-static constexpr int32_t maximum_version = 10;
+static constexpr int32_t current_version = 3;
 }  // namespace
 
 class Version {
@@ -36,16 +35,10 @@ class Version {
         return Version(default_version);
     }
 
-    // the recommended version
+    // the current version (newest version support)
     static inline Version
     GetCurrentVersion() {
         return Version(current_version);
-    }
-
-    // the maximum version (beta version)
-    static inline Version
-    GetMaximumVersion() {
-        return Version(maximum_version);
     }
 
     // the minimal version (oldest version support)
@@ -56,12 +49,12 @@ class Version {
 
     static inline bool
     VersionSupport(const Version& version) {
-        return GetMinimalVersion() <= version && version <= GetMaximumVersion();
+        return GetMinimalVersion() <= version && version <= GetCurrentVersion();
     }
 
     static inline std::pair<Version, Version>
     GetSupportRange() {
-        return std::make_pair(Version(minimal_version), Version(maximum_version));
+        return std::make_pair(Version(minimal_version), Version(current_version));
     }
 
     // the version number
@@ -73,11 +66,6 @@ class Version {
     friend bool
     operator<=(const Version& lhs, const Version& rhs) {
         return lhs.version_ <= rhs.version_;
-    }
-
-    friend bool
-    operator>=(const Version& lhs, const Version& rhs) {
-        return lhs.version_ >= rhs.version_;
     }
 
  private:

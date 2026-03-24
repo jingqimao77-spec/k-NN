@@ -13,6 +13,8 @@ import org.apache.lucene.store.IndexInput;
 import org.opensearch.knn.index.engine.KNNEngine;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 public class KNN80CompoundDirectory extends CompoundDirectory {
@@ -34,12 +36,22 @@ public class KNN80CompoundDirectory extends CompoundDirectory {
 
     @Override
     public String[] listAll() throws IOException {
-        return delegate.listAll();
+        Set<String> files = new LinkedHashSet<>(Arrays.asList(delegate.listAll()));
+        files.addAll(Arrays.asList(dir.listAll()));
+        return files.toArray(String[]::new);
     }
 
     @Override
     public long fileLength(String name) throws IOException {
-        return delegate.fileLength(name);
+        try {
+            return delegate.fileLength(name);
+        } catch (IOException delegateException) {
+            try {
+                return dir.fileLength(name);
+            } catch (IOException ignored) {
+                throw delegateException;
+            }
+        }
     }
 
     @Override
@@ -47,7 +59,15 @@ public class KNN80CompoundDirectory extends CompoundDirectory {
         if (KNNEngine.getEnginesThatCreateCustomSegmentFiles().stream().anyMatch(engine -> name.endsWith(engine.getCompoundExtension()))) {
             return dir.openInput(name, context);
         }
-        return delegate.openInput(name, context);
+        try {
+            return delegate.openInput(name, context);
+        } catch (IOException delegateException) {
+            try {
+                return dir.openInput(name, context);
+            } catch (IOException ignored) {
+                throw delegateException;
+            }
+        }
     }
 
     @Override

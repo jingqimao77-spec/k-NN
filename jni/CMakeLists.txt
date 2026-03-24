@@ -138,28 +138,137 @@ set(KNOWHERE_BUNDLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/knowhere")
 set(KNOWHERE_LIB_DIR "${KNOWHERE_BUNDLE_DIR}/lib")
 set(KNOWHERE_INCLUDE_DIR "${KNOWHERE_BUNDLE_DIR}/include")
 
+set(CONAN_CACHE_HINTS
+    "$ENV{CONAN_USER_HOME}/.conan/data"
+    "$ENV{HOME}/.conan/data"
+    "/root/.conan/data"
+    "/home/developer/.conan/data"
+)
+
+function(find_conan_path OUT_VAR PACKAGE RELATIVE_GLOB)
+    set(_matches "")
+    foreach(_cache_dir IN LISTS CONAN_CACHE_HINTS)
+        if(_cache_dir)
+            file(GLOB _pkg_matches "${_cache_dir}/${PACKAGE}/*/*/*/package/*/${RELATIVE_GLOB}")
+            list(APPEND _matches ${_pkg_matches})
+        endif()
+    endforeach()
+
+    list(LENGTH _matches _match_count)
+    if(_match_count EQUAL 0)
+        message(FATAL_ERROR "Unable to find Conan package path for ${PACKAGE}/${RELATIVE_GLOB}. Set CONAN_USER_HOME or install the dependency.")
+    endif()
+
+    list(GET _matches 0 _selected)
+    set(${OUT_VAR} "${_selected}" PARENT_SCOPE)
+endfunction()
+
+function(find_conan_optional_path OUT_VAR PACKAGE RELATIVE_GLOB)
+    set(_matches "")
+    foreach(_cache_dir IN LISTS CONAN_CACHE_HINTS)
+        if(_cache_dir)
+            file(GLOB _pkg_matches "${_cache_dir}/${PACKAGE}/*/*/*/package/*/${RELATIVE_GLOB}")
+            list(APPEND _matches ${_pkg_matches})
+        endif()
+    endforeach()
+
+    list(LENGTH _matches _match_count)
+    if(_match_count GREATER 0)
+        list(GET _matches 0 _selected)
+        set(${OUT_VAR} "${_selected}" PARENT_SCOPE)
+    else()
+        set(${OUT_VAR} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(find_conan_library_prefer_static OUT_VAR PACKAGE STATIC_GLOB DYNAMIC_GLOB)
+    find_conan_optional_path(_static_lib ${PACKAGE} "${STATIC_GLOB}")
+    if(_static_lib)
+        set(${OUT_VAR} "${_static_lib}" PARENT_SCOPE)
+    else()
+        find_conan_path(${OUT_VAR} ${PACKAGE} "${DYNAMIC_GLOB}")
+    endif()
+endfunction()
+find_conan_library_prefer_static(FOLLY_LIB folly "lib/libfolly.a" "lib/libfolly.so*")
+find_conan_library_prefer_static(GLOG_LIB glog "lib/libglog.a" "lib/libglog.so*")
+find_conan_library_prefer_static(GFLAGS_LIB gflags "lib/libgflags_nothreads.a" "lib/libgflags_nothreads.so*")
+find_conan_optional_path(FMT_LIB fmt "lib/libfmt.a")
+find_conan_library_prefer_static(OPENSSL_CRYPTO_LIB openssl "lib/libcrypto.a" "lib/libcrypto.so*")
+find_conan_library_prefer_static(OPENSSL_SSL_LIB openssl "lib/libssl.a" "lib/libssl.so*")
+
+function(append_conan_package_libs OUT_VAR PACKAGE)
+    find_conan_optional_path(_lib_dir ${PACKAGE} "lib")
+    if(_lib_dir)
+        file(GLOB _static_libs "${_lib_dir}/*.a")
+        file(GLOB _dynamic_libs "${_lib_dir}/*.so" "${_lib_dir}/*.so.*" "${_lib_dir}/*.dylib")
+        list(SORT _static_libs)
+        list(SORT _dynamic_libs)
+        set(_all_libs ${_static_libs})
+        list(APPEND _all_libs ${_dynamic_libs})
+        set(_current ${${OUT_VAR}})
+        list(APPEND _current ${_all_libs})
+        list(REMOVE_DUPLICATES _current)
+        set(${OUT_VAR} ${_current} PARENT_SCOPE)
+    endif()
+endfunction()
+
+find_conan_path(NLOHMANN_JSON_INCLUDE nlohmann_json "include")
+find_conan_path(FMT_INCLUDE fmt "include")
+find_conan_path(GLOG_INCLUDE glog "include")
+find_conan_path(GFLAGS_INCLUDE gflags "include")
+find_conan_path(FOLLY_INCLUDE folly "include")
+find_conan_path(BOOST_INCLUDE boost "include")
+find_conan_optional_path(OPENSSL_INCLUDE openssl "include")
+find_library(AIO_LIB aio REQUIRED)
+find_package(OpenMP REQUIRED)
+
+set(KNOWHERE_THIRDPARTY_LIBS "")
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS prometheus-cpp)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS opentelemetry-cpp)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS opentelemetry-proto)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS grpc)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS protobuf)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS double-conversion)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS libevent)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS libcurl)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS thrift)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS c-ares)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS re2)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS zlib)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS abseil)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS snappy)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS bzip2)
+append_conan_package_libs(KNOWHERE_THIRDPARTY_LIBS liblzma)
+
 add_library(${TARGET_LIB_KNOWHERE} SHARED 
     ${CMAKE_CURRENT_SOURCE_DIR}/src/org_opensearch_knn_jni_KnowhereService.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/src/knowhere_wrapper.cpp
 )
 
-# Use -Wl,--whole-archive to ensure all symbols from static libs are included in the SO
-# Note: milvus-common headers are now under ${KNOWHERE_INCLUDE_DIR}/milvus-common
-target_link_libraries(${TARGET_LIB_KNOWHERE} 
+target_link_libraries(${TARGET_LIB_KNOWHERE}
     ${TARGET_LIB_UTIL}
+    OpenMP::OpenMP_CXX
+    -Wl,--start-group
     -Wl,--whole-archive
     ${KNOWHERE_LIB_DIR}/libknowhere.a
     ${KNOWHERE_LIB_DIR}/libknowhere_utils.a
-    ${KNOWHERE_LIB_DIR}/libmilvus-common.a
+    ${KNOWHERE_LIB_DIR}/libdiskann.a
     -Wl,--no-whole-archive
-    # Absolute paths to transitive dependencies (some shared, some static)
-    "/home/developer/.conan/data/folly/2024.08.12.00/milvus/dev/package/e3fd189726e0f3bd3ab983e3ed61fabb6704f55d/lib/libfolly.so"
-    "/home/developer/.conan/data/glog/0.7.1/_/_/package/14ede1c322bb898ec4dd6a3fe972378a714b1175/lib/libglog.so"
-    "/home/developer/.conan/data/gflags/2.2.2/_/_/package/770f4a67f1d0d4ce88a0455242306703d33ab8af/lib/libgflags_nothreads.so"
-    "/home/developer/.conan/data/fmt/11.0.2/_/_/package/509f2206b09761325d49d488cb0b77c05da8f886/lib/libfmt.a"
-    "/home/developer/.conan/data/openssl/3.3.2/_/_/package/f27548f7f380afa49bc7fdfc7a4e58a3ba495b5a/lib/libcrypto.so.3"
-    "/home/developer/.conan/data/openssl/3.3.2/_/_/package/f27548f7f380afa49bc7fdfc7a4e58a3ba495b5a/lib/libssl.so.3"
-    "/usr/lib/x86_64-linux-gnu/libaio.so"
+    ${KNOWHERE_LIB_DIR}/libfaiss.a
+    ${FOLLY_LIB}
+    ${GLOG_LIB}
+    ${GFLAGS_LIB}
+    ${FMT_LIB}
+    ${OPENSSL_CRYPTO_LIB}
+    ${OPENSSL_SSL_LIB}
+    ${KNOWHERE_THIRDPARTY_LIBS}
+    -Wl,--end-group
+    ${AIO_LIB}
+    ${CMAKE_DL_LIBS}
+    pthread
+    rt
+    m
+    atomic
 )
 
 # Set RPATH to ensure shared dependencies can be found in the same directory (as a fallback)
@@ -174,12 +283,13 @@ target_include_directories(${TARGET_LIB_KNOWHERE} PRIVATE
     $ENV{JAVA_HOME}/include/${JVM_OS_TYPE} 
     ${KNOWHERE_INCLUDE_DIR}
     ${KNOWHERE_INCLUDE_DIR}/knowhere
-    ${KNOWHERE_INCLUDE_DIR}/milvus-common
-    "/home/developer/.conan/data/nlohmann_json/3.11.3/_/_/package/5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9/include"
-    "/home/developer/.conan/data/fmt/11.0.2/_/_/package/509f2206b09761325d49d488cb0b77c05da8f886/include"
-    "/home/developer/.conan/data/glog/0.7.1/_/_/package/14ede1c322bb898ec4dd6a3fe972378a714b1175/include"
-    "/home/developer/.conan/data/folly/2024.08.12.00/milvus/dev/package/e3fd189726e0f3bd3ab983e3ed61fabb6704f55d/include"
-    "/home/developer/.conan/data/boost/1.83.0/_/_/package/b9caf221c687b28d51f5bc60176dc7254cd2d304/include"
+    ${NLOHMANN_JSON_INCLUDE}
+    ${FMT_INCLUDE}
+    ${GLOG_INCLUDE}
+    ${GFLAGS_INCLUDE}
+    ${FOLLY_INCLUDE}
+    ${BOOST_INCLUDE}
+    ${OPENSSL_INCLUDE}
 )
 
 opensearch_set_common_properties(${TARGET_LIB_KNOWHERE})
@@ -234,8 +344,8 @@ list(APPEND TARGET_LIBS ${TARGET_LIB_SIMD})
 # --------------------------------- TESTS -----------------------------------
 # Windows : Comment the TESTS for now because the tests are failing(failing to build jni_tests.exe) if we are building our target libraries as SHARED libraries.
 # TODO: Fix the failing JNI TESTS on Windows
-if (TRUE) # Force enable for verification
-    if (TRUE)
+if (${CONFIG_TEST} STREQUAL ON OR ${CONFIG_ALL} STREQUAL ON)
+    if (NOT WIN32)
         # Reference - https://crascit.com/2015/07/25/cmake-gtest/
         configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
         execute_process(COMMAND "${CMAKE_COMMAND}" -G "${CMAKE_GENERATOR}" .

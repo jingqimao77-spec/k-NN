@@ -6,9 +6,13 @@
 package org.opensearch.knn.index.store;
 
 import lombok.NonNull;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.IOContext;
 
 import java.io.IOException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * This class contains a Lucene's IndexInput with a reader buffer.
@@ -17,13 +21,24 @@ import java.io.IOException;
  * Therefore, this class servers as a read layer in native engines to read the bytes it wants.
  */
 public class IndexInputWithBuffer {
-    private IndexInput indexInput;
-    private long contentLength;
+    private static final Pattern FS_PATH_PATTERN = Pattern.compile("path=\"([^\"]+)\"");
+    private final IndexInput indexInput;
+    private final Directory directory;
+    private final IOContext ioContext;
+    private final String fileName;
+    private final long contentLength;
     // 64K buffer.
-    private byte[] buffer = new byte[64 * 1024];
+    private final byte[] buffer = new byte[64 * 1024];
 
     public IndexInputWithBuffer(@NonNull IndexInput indexInput) {
+        this(indexInput, null, null, null);
+    }
+
+    public IndexInputWithBuffer(@NonNull IndexInput indexInput, Directory directory, IOContext ioContext, String fileName) {
         this.indexInput = indexInput;
+        this.directory = directory;
+        this.ioContext = ioContext;
+        this.fileName = fileName;
         this.contentLength = indexInput.length();
     }
 
@@ -43,6 +58,14 @@ public class IndexInputWithBuffer {
 
     private long remainingBytes() {
         return contentLength - indexInput.getFilePointer();
+    }
+
+    public String getFilePath() {
+        Matcher matcher = FS_PATH_PATTERN.matcher(indexInput.toString());
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
     }
 
     @Override

@@ -5,19 +5,28 @@
 
 package org.opensearch.knn.index.store;
 
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.IOContext;
 import org.opensearch.knn.common.exception.TerminalIOException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Wrapper around {@link IndexOutput} to perform writes in a buffered manner. This class is created per flush/merge, and may be used twice if
  * {@link org.opensearch.knn.index.codec.nativeindex.remote.RemoteIndexBuildStrategy} needs to fall back to a different build strategy.
  */
 public class IndexOutputWithBuffer {
+    private static final Pattern FS_PATH_PATTERN = Pattern.compile("path=\"([^\"]+)\"");
     // Underlying `IndexOutput` obtained from Lucene's Directory.
-    private IndexOutput indexOutput;
+    private final IndexOutput indexOutput;
+    // Optional Lucene context used by engines that manage multiple files.
+    private final Directory directory;
+    private final IOContext ioContext;
+    private final String fileName;
     // Write buffer. Native engine will copy bytes into this buffer.
     // Allocating 64KB here since it show better performance in NMSLIB with the size. (We had slightly improvement in FAISS than having 4KB)
     // NMSLIB writes an adjacent list size first, then followed by serializing the list. Since we usually have more adjacent lists, having
@@ -26,7 +35,14 @@ public class IndexOutputWithBuffer {
     private final byte[] buffer;
 
     public IndexOutputWithBuffer(IndexOutput indexOutput) {
+        this(indexOutput, null, null, null);
+    }
+
+    public IndexOutputWithBuffer(IndexOutput indexOutput, Directory directory, IOContext ioContext, String fileName) {
         this.indexOutput = indexOutput;
+        this.directory = directory;
+        this.ioContext = ioContext;
+        this.fileName = fileName;
         this.buffer = new byte[CHUNK_SIZE];
     }
 
@@ -80,6 +96,14 @@ public class IndexOutputWithBuffer {
                 }
             }
         }
+    }
+
+    public String getFilePath() {
+        Matcher matcher = FS_PATH_PATTERN.matcher(indexOutput.toString());
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
     }
 
     @Override

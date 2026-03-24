@@ -454,7 +454,7 @@ tasks.register('buildJniLib', Exec) {
     args.add("--build")
     args.add("jni/build")
     args.add("--target")
-    def knn_libs = ['opensearchknn_faiss', 'opensearchknn_common', 'opensearchknn_nmslib', 'opensearchknn_simd']
+    def knn_libs = ['opensearchknn_faiss', 'opensearchknn_common', 'opensearchknn_nmslib', 'opensearchknn_simd', 'opensearchknn_knowhere']
     if (project.hasProperty('knn_libs')) {
         knn_libs = ['opensearchknn_common'] + project.knn_libs.split(',').collect { it.trim() }
     }
@@ -463,6 +463,16 @@ tasks.register('buildJniLib', Exec) {
     args.add("${nproc_count}")
     logger.lifecycle("Build command: ${args.join(' ')}")
     commandLine args
+}
+
+tasks.named("bundlePlugin").configure {
+    dependsOn buildJniLib
+    from("jni/build/release") {
+        include "*.so"
+        include "*.dylib"
+        include "*.dll"
+    }
+
 }
 
 test {

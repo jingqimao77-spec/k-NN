@@ -1,6 +1,7 @@
 grant {
     permission java.lang.RuntimePermission "loadLibrary.opensearchknn_nmslib";
     permission java.lang.RuntimePermission "loadLibrary.opensearchknn_faiss";
+    permission java.lang.RuntimePermission "loadLibrary.opensearchknn_knowhere";
     permission java.lang.RuntimePermission "loadLibrary.opensearchknn_common";
     permission java.lang.RuntimePermission "loadLibrary.opensearchknn_simd";
     permission java.lang.RuntimePermission "loadLibrary.opensearchknn_simd_avx2";

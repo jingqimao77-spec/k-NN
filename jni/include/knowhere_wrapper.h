@@ -22,15 +22,15 @@ namespace knowhere_wrapper {
 
 void InitLibrary();
 
-void CreateIndex(JNIUtilInterface *jniUtil, JNIEnv *env, jintArray idsJ, jlong vectorsAddressJ, jint dimJ, jstring indexPathJ, jobject parametersJ);
+void CreateIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jintArray idsJ, jlong vectorsAddressJ, jint dimJ, jobject outputJ, jobject parametersJ);
 
-jlong LoadIndex(JNIUtilInterface *jniUtil, JNIEnv *env, jstring indexPathJ, jobject parametersJ);
+jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, jobject parametersJ);
 
-jobjectArray QueryIndex(JNIUtilInterface *jniUtil, JNIEnv *env, jlong indexPointerJ, jfloatArray queryVectorJ, jint kJ, jobject methodParamsJ);
+jobjectArray QueryIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jlong indexPointerJ, jfloatArray queryVectorJ, jint kJ, jobject methodParamsJ);
 
 void Free(jlong indexPointerJ);
 
-} // namespace knowhere_wrapper
-} // namespace knn_jni
+}  // namespace knowhere_wrapper
+}  // namespace knn_jni
 
 #endif

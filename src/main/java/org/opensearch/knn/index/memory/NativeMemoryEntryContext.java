@@ -184,7 +184,7 @@ public abstract class NativeMemoryEntryContext<T extends NativeMemoryAllocation>
                 indexSizeKb = Math.toIntExact(directory.fileLength(vectorFileName) / 1024);
                 readStream = directory.openInput(vectorFileName, IOContext.READONCE);
                 readStream.seek(0);
-                indexInputWithBuffer = new IndexInputWithBuffer(readStream);
+                indexInputWithBuffer = new IndexInputWithBuffer(readStream, directory, IOContext.READONCE, vectorFileName);
                 indexGraphFileOpened = true;
                 log.debug("[KNN] NativeMemoryCacheManager open successful");
             } catch (IOException e) {

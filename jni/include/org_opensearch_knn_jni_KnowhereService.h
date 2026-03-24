@@ -29,18 +29,18 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_KnowhereService_initLibrary
 /*
  * Class:     org_opensearch_knn_jni_KnowhereService
  * Method:    createIndex
- * Signature: ([IJILjava/lang/String;Ljava/util/Map;)V
+ * Signature: ([IJILorg/opensearch/knn/index/store/IndexOutputWithBuffer;Ljava/util/Map;)V
  */
 JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_KnowhereService_createIndex
-  (JNIEnv *, jclass, jintArray, jlong, jint, jstring, jobject);
+  (JNIEnv *, jclass, jintArray, jlong, jint, jobject, jobject);
 
 /*
  * Class:     org_opensearch_knn_jni_KnowhereService
  * Method:    loadIndex
- * Signature: (Ljava/lang/String;Ljava/util/Map;)J
+ * Signature: (Lorg/opensearch/knn/index/store/IndexInputWithBuffer;Ljava/util/Map;)J
  */
 JNIEXPORT jlong JNICALL Java_org_opensearch_knn_jni_KnowhereService_loadIndex
-  (JNIEnv *, jclass, jstring, jobject);
+  (JNIEnv *, jclass, jobject, jobject);
 
 /*
  * Class:     org_opensearch_knn_jni_KnowhereService

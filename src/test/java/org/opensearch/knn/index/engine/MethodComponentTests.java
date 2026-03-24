@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 
+import static org.opensearch.knn.common.KNNConstants.DISKANN_BUILD_DRAM_BUDGET_GB;
 import static org.opensearch.knn.common.KNNConstants.NAME;
 import static org.opensearch.knn.common.KNNConstants.PARAMETERS;
 
@@ -188,6 +189,26 @@ public class MethodComponentTests extends KNNTestCase {
                 KNNMethodConfigContext.builder().versionCreated(Version.CURRENT).build()
             ).getLibraryParameters()
         );
+    }
+
+    public void testGetParameterMapWithDefaultsAdded_diskANNBuildDramBudgetUsesAvailableSystemMemory() {
+        String methodName = "diskann";
+        MethodComponent methodComponent = MethodComponent.Builder.builder(methodName)
+            .addParameter(DISKANN_BUILD_DRAM_BUDGET_GB, new Parameter.DoubleParameter(DISKANN_BUILD_DRAM_BUDGET_GB, 0.0, (v, context) -> v >= 0))
+            .build();
+
+        MethodComponentContext methodComponentContext = new MethodComponentContext(methodName, Map.of());
+        KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder().versionCreated(Version.CURRENT).build();
+
+        Map<String, Object> parameterMap = MethodComponent.getParameterMapWithDefaultsAdded(
+            methodComponentContext,
+            methodComponent,
+            knnMethodConfigContext
+        );
+
+        assertTrue(parameterMap.containsKey(DISKANN_BUILD_DRAM_BUDGET_GB));
+        assertTrue(parameterMap.get(DISKANN_BUILD_DRAM_BUDGET_GB) instanceof Double);
+        assertTrue((Double) parameterMap.get(DISKANN_BUILD_DRAM_BUDGET_GB) > 0.0d);
     }
 
     public void testBuilder() {

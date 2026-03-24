@@ -14,6 +14,8 @@ package org.opensearch.knn.jni;
 import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.query.KNNQueryResult;
+import org.opensearch.knn.index.store.IndexInputWithBuffer;
+import org.opensearch.knn.index.store.IndexOutputWithBuffer;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -39,24 +41,24 @@ class KnowhereService {
     public static native void initLibrary();
 
     /**
-     * Create an index for knowhere engine.
+     * Create a knowhere index and persist it through Lucene's Directory integration.
      *
      * @param ids ids of documents
      * @param vectorsAddress address of native memory where vectors are stored
      * @param dim dimension of the vector to be indexed
-     * @param indexPath path to save the index (for DiskANN, this is the prefix)
+     * @param output index output wrapper that carries Lucene file-management context
      * @param parameters build parameters
      */
-    public static native void createIndex(int[] ids, long vectorsAddress, int dim, String indexPath, Map<String, Object> parameters);
+    public static native void createIndex(int[] ids, long vectorsAddress, int dim, IndexOutputWithBuffer output, Map<String, Object> parameters);
 
     /**
-     * Load an index into memory.
+     * Load a knowhere index through Lucene's Directory integration.
      *
-     * @param indexPath path to index file or prefix
+     * @param readStream input wrapper that carries Lucene file-management context
      * @param parameters load parameters (e.g., mmap)
      * @return pointer to the loaded index
      */
-    public static native long loadIndex(String indexPath, Map<String, Object> parameters);
+    public static native long loadIndex(IndexInputWithBuffer readStream, Map<String, Object> parameters);
 
     /**
      * Query a knowhere index.

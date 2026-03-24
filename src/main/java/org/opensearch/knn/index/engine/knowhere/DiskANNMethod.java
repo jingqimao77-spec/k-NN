@@ -61,7 +61,7 @@ public class DiskANNMethod extends AbstractKNNMethod {
             )
             .addParameter(
                 DISKANN_PQ_CODE_BUDGET_GB_RATIO,
-                new Parameter.DoubleParameter(DISKANN_PQ_CODE_BUDGET_GB_RATIO, 0.0, (v, context) -> v >= 0)
+                new Parameter.DoubleParameter(DISKANN_PQ_CODE_BUDGET_GB_RATIO, 0.125, (v, context) -> v > 0)
             )
             .addParameter(
                 DISKANN_BUILD_DRAM_BUDGET_GB,

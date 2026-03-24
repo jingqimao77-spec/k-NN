@@ -24,26 +24,24 @@ class IndexNodeThreadPoolWrapper : public IndexNode {
     IndexNodeThreadPoolWrapper(std::unique_ptr<IndexNode> index_node, std::shared_ptr<ThreadPool> thread_pool);
 
     Status
-    Train(const DataSetPtr dataset, std::shared_ptr<Config> cfg, bool use_knowhere_build_pool) override {
-        return index_node_->Train(dataset, std::move(cfg), use_knowhere_build_pool);
+    Train(const DataSet& dataset, const Config& cfg) override {
+        return index_node_->Train(dataset, cfg);
     }
 
     Status
-    Add(const DataSetPtr dataset, std::shared_ptr<Config> cfg, bool use_knowhere_build_pool) override {
-        return index_node_->Add(dataset, std::move(cfg), use_knowhere_build_pool);
+    Add(const DataSet& dataset, const Config& cfg) override {
+        return index_node_->Add(dataset, cfg);
     }
 
     expected<DataSetPtr>
-    Search(const DataSetPtr dataset, std::unique_ptr<Config> cfg, const BitsetView& bitset,
-           milvus::OpContext* op_context) const override;
+    Search(const DataSet& dataset, const Config& cfg, const BitsetView& bitset) const override;
 
     expected<DataSetPtr>
-    RangeSearch(const DataSetPtr dataset, std::unique_ptr<Config> cfg, const BitsetView& bitset,
-                milvus::OpContext* op_context) const override;
+    RangeSearch(const DataSet& dataset, const Config& cfg, const BitsetView& bitset) const override;
 
     expected<DataSetPtr>
-    GetVectorByIds(const DataSetPtr dataset, milvus::OpContext* op_context) const override {
-        return index_node_->GetVectorByIds(dataset, op_context);
+    GetVectorByIds(const DataSet& dataset) const override {
+        return index_node_->GetVectorByIds(dataset);
     }
 
     bool
@@ -52,8 +50,8 @@ class IndexNodeThreadPoolWrapper : public IndexNode {
     }
 
     expected<DataSetPtr>
-    GetIndexMeta(std::unique_ptr<Config> cfg) const override {
-        return index_node_->GetIndexMeta(std::move(cfg));
+    GetIndexMeta(const Config& cfg) const override {
+        return index_node_->GetIndexMeta(cfg);
     }
 
     Status
@@ -62,13 +60,13 @@ class IndexNodeThreadPoolWrapper : public IndexNode {
     }
 
     Status
-    Deserialize(const BinarySet& binset, std::shared_ptr<Config> cfg) override {
-        return index_node_->Deserialize(binset, std::move(cfg));
+    Deserialize(const BinarySet& binset, const Config& config) override {
+        return index_node_->Deserialize(binset, config);
     }
 
     Status
-    DeserializeFromFile(const std::string& filename, std::shared_ptr<Config> cfg) override {
-        return index_node_->DeserializeFromFile(filename, move(cfg));
+    DeserializeFromFile(const std::string& filename, const Config& config) override {
+        return index_node_->DeserializeFromFile(filename, config);
     }
 
     std::unique_ptr<BaseConfig>

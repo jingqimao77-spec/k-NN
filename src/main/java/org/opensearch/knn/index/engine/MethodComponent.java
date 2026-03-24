@@ -15,6 +15,10 @@ import org.opensearch.knn.index.mapper.CompressionLevel;
 import org.opensearch.knn.index.mapper.Mode;
 import org.opensearch.knn.index.util.IndexHyperParametersUtil;
 
+import com.sun.management.OperatingSystemMXBean;
+import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
@@ -27,6 +31,8 @@ import static org.opensearch.knn.index.engine.validation.ParameterValidator.vali
  * MethodComponent defines the structure of an individual component that can make up an index
  */
 public class MethodComponent {
+
+    private static final long BYTES_PER_GIB = 1024L * 1024L * 1024L;
 
     @Getter
     private final String name;
@@ -369,7 +375,9 @@ public class MethodComponent {
 
                 } else {
                     Object value = parameter.getDefaultValue();
-                    if (value != null) {
+                    if (KNNConstants.DISKANN_BUILD_DRAM_BUDGET_GB.equals(parameter.getName())) {
+                        parametersWithDefaultsMap.put(parameter.getName(), getDefaultDiskANNBuildDramBudgetGB());
+                    } else if (value != null) {
                         parametersWithDefaultsMap.put(parameter.getName(), value);
                     }
                 }
@@ -378,5 +386,39 @@ public class MethodComponent {
         }
 
         return parametersWithDefaultsMap;
+    }
+
+    static double getDefaultDiskANNBuildDramBudgetGB() {
+        long availableMemoryBytes = getAvailableSystemMemoryBytes();
+        return Math.max(1.0d, availableMemoryBytes / (double) BYTES_PER_GIB);
+    }
+
+    private static long getAvailableSystemMemoryBytes() {
+        try {
+            if (Files.isReadable(Path.of("/proc/meminfo"))) {
+                for (String line : Files.readAllLines(Path.of("/proc/meminfo"))) {
+                    if (line.startsWith("MemAvailable:")) {
+                        String[] parts = line.trim().split("\\s+");
+                        if (parts.length >= 2) {
+                            return Long.parseLong(parts[1]) * 1024L;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        try {
+            java.lang.management.OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+            if (osBean instanceof OperatingSystemMXBean) {
+                long freeMemorySize = ((OperatingSystemMXBean) osBean).getFreeMemorySize();
+                if (freeMemorySize > 0) {
+                    return freeMemorySize;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return Math.max(Runtime.getRuntime().maxMemory(), BYTES_PER_GIB);
     }
 }

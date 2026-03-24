@@ -16,23 +16,13 @@
 #define OPERANDS_H
 #include <math.h>
 
-#include <cstdint>
 #include <cstring>
-
-#include "feature.h"
 
 namespace {
 union fp32_bits {
     uint32_t as_bits;
     float as_value;
 };
-
-__attribute__((always_inline)) inline float
-bf16_float(float f) {
-    auto u32 = fp32_bits{.as_value = f}.as_bits;
-    // Round off
-    return fp32_bits{.as_bits = (u32 + 0x8000) & 0xFFFF0000}.as_value;
-}
 
 inline float
 fp32_from_bits(const uint32_t& w) {
@@ -47,7 +37,6 @@ fp32_to_bits(const float& f) {
 
 namespace knowhere {
 using fp32 = float;
-using int8 = int8_t;
 using bin1 = uint8_t;
 
 struct fp16 {
@@ -146,45 +135,12 @@ struct bf16 {
     }
 };
 
-struct sparse_u32_f32 {
-    using IdxType = uint32_t;
-    using ValueType = float;
-};
-
-template <typename T>
-bool
-typeCheck(uint64_t features) {
-    if constexpr (std::is_same_v<T, bin1>) {
-        return features & knowhere::feature::BINARY;
-    }
-    if constexpr (std::is_same_v<T, fp16>) {
-        return features & knowhere::feature::FP16;
-    }
-    if constexpr (std::is_same_v<T, bf16>) {
-        return features & knowhere::feature::BF16;
-    }
-    if constexpr (std::is_same_v<T, fp32>) {
-        return features & knowhere::feature::FLOAT32;
-    }
-    if constexpr (std::is_same_v<T, sparse_u32_f32>) {
-        return features & knowhere::feature::SPARSE_U32_F32;
-    }
-    if constexpr (std::is_same_v<T, int8>) {
-        return features & knowhere::feature::INT8;
-    }
-    return false;
-}
-
 template <typename InType, typename... Types>
 using TypeMatch = std::bool_constant<(... | std::is_same_v<InType, Types>)>;
 template <typename InType>
-using KnowhereDataTypeCheck = TypeMatch<InType, bin1, fp32, sparse_u32_f32, fp16, bf16, int8>;
+using KnowhereDataTypeCheck = TypeMatch<InType, bin1, fp16, fp32, bf16>;
 template <typename InType>
-using KnowhereFloatTypeCheck = TypeMatch<InType, fp32, sparse_u32_f32, fp16, bf16>;
-template <typename InType>
-using KnowhereLowPrecisionTypeCheck = TypeMatch<InType, fp16, bf16, int8>;
-template <typename InType>
-using KnowhereIntTypeCheck = TypeMatch<InType, int8>;
+using KnowhereFloatTypeCheck = TypeMatch<InType, fp16, fp32, bf16>;
 
 template <typename T>
 struct MockData {
@@ -200,45 +156,5 @@ template <>
 struct MockData<knowhere::bf16> {
     using type = knowhere::fp32;
 };
-
-template <>
-struct MockData<knowhere::int8> {
-    using type = knowhere::fp32;
-};
-
-//
-enum class DataFormatEnum { fp32, fp16, bf16, int8, bin1, sparse_u32_f32 };
-
-template <typename T>
-struct DataType2EnumHelper {};
-
-template <>
-struct DataType2EnumHelper<knowhere::fp32> {
-    static constexpr DataFormatEnum value = DataFormatEnum::fp32;
-};
-template <>
-struct DataType2EnumHelper<knowhere::fp16> {
-    static constexpr DataFormatEnum value = DataFormatEnum::fp16;
-};
-template <>
-struct DataType2EnumHelper<knowhere::bf16> {
-    static constexpr DataFormatEnum value = DataFormatEnum::bf16;
-};
-template <>
-struct DataType2EnumHelper<knowhere::int8> {
-    static constexpr DataFormatEnum value = DataFormatEnum::int8;
-};
-template <>
-struct DataType2EnumHelper<knowhere::bin1> {
-    static constexpr DataFormatEnum value = DataFormatEnum::bin1;
-};
-template <>
-struct DataType2EnumHelper<knowhere::sparse_u32_f32> {
-    static constexpr DataFormatEnum value = DataFormatEnum::sparse_u32_f32;
-};
-
-template <typename T>
-static constexpr DataFormatEnum datatype_v = DataType2EnumHelper<T>::value;
-
 }  // namespace knowhere
 #endif /* OPERANDS_H */
