@@ -14,16 +14,19 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <filesystem>
+#include <cstdint>
 #include <cstring>
-#include <iterator>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace google {
@@ -56,6 +59,8 @@ struct LoadedKnowhereIndex {
     knowhere::Index<knowhere::IndexNode> index;
     std::shared_ptr<knowhere::FileManager> file_manager;
     std::filesystem::path local_data_dir;
+    std::vector<int64_t> internal_to_external;
+    std::unordered_map<int64_t, int64_t> external_to_internal;
 };
 
 struct TempDirGuard {
@@ -83,9 +88,60 @@ struct ManifestInfo {
     std::vector<std::string> files;
 };
 
+struct FilterState {
+    std::vector<uint8_t> excluded_bits;
+    size_t num_bits = 0;
+    size_t filtered_out_count = 0;
+    size_t allowed_count = 0;
+
+    knowhere::BitsetView
+    View() const {
+        if (excluded_bits.empty()) {
+            return knowhere::BitsetView();
+        }
+        return knowhere::BitsetView(excluded_bits.data(), num_bits, filtered_out_count);
+    }
+};
+
+struct SearchResultEntry {
+    jint id;
+    float distance;
+};
+
+constexpr jint kFilterTypeBitmap = 0;
+constexpr jint kFilterTypeBatch = 1;
+constexpr const char* kDocIdsSuffix = ".docids.bin";
+constexpr float kBytesPerGiB = 1024.0f * 1024.0f * 1024.0f;
+
 std::string
 GetRawDataPath(const std::string& index_prefix) {
     return index_prefix + ".raw_data";
+}
+
+std::string
+GetDocIdsPath(const std::string& index_prefix) {
+    return index_prefix + kDocIdsSuffix;
+}
+
+std::vector<std::string>
+GetAdditionalDiskannSidecarPaths(const std::string& index_prefix) {
+    return {
+        index_prefix + "_disk.index_pq_pivots.bin",
+        index_prefix + "_disk.index_pq_pivots.bin_rearrangement_perm.bin",
+        index_prefix + "_disk.index_pq_pivots.bin_chunk_offsets.bin",
+        index_prefix + "_disk.index_pq_pivots.bin_centroid.bin",
+        index_prefix + "_disk.index_pq_compressed.bin",
+    };
+}
+
+void
+RegisterOptionalBuildArtifact(knowhere::FileManager& file_manager, const std::string& path) {
+    if (!std::filesystem::exists(path)) {
+        return;
+    }
+    if (!file_manager.AddFile(path)) {
+        throw std::runtime_error("Failed to register knowhere optional artifact with file manager: " + path);
+    }
 }
 
 void
@@ -102,6 +158,69 @@ WriteRawDataFile(const std::string& path, const float* vectors, uint32_t rows, u
     if (!writer.good()) {
         throw std::runtime_error("Failed to write knowhere raw data file: " + path);
     }
+}
+
+void
+WriteDocIdsFile(const std::string& path, const std::vector<int64_t>& ids) {
+    std::ofstream writer(path, std::ios::binary | std::ios::trunc);
+    if (!writer.is_open()) {
+        throw std::runtime_error("Failed to open knowhere doc ids sidecar for write: " + path);
+    }
+
+    const uint64_t count = ids.size();
+    writer.write(reinterpret_cast<const char*>(&count), sizeof(count));
+    if (!ids.empty()) {
+        writer.write(reinterpret_cast<const char*>(ids.data()), static_cast<std::streamsize>(ids.size() * sizeof(int64_t)));
+    }
+
+    if (!writer.good()) {
+        throw std::runtime_error("Failed to write knowhere doc ids sidecar: " + path);
+    }
+}
+
+std::vector<int64_t>
+ReadDocIdsFile(const std::string& path) {
+    std::ifstream reader(path, std::ios::binary);
+    if (!reader.is_open()) {
+        throw std::runtime_error("Failed to open knowhere doc ids sidecar: " + path);
+    }
+
+    uint64_t count = 0;
+    reader.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!reader.good() && !reader.eof()) {
+        throw std::runtime_error("Failed to read knowhere doc ids sidecar header: " + path);
+    }
+
+    std::vector<int64_t> ids(count);
+    if (count > 0) {
+        reader.read(reinterpret_cast<char*>(ids.data()), static_cast<std::streamsize>(count * sizeof(int64_t)));
+        if (!reader) {
+            throw std::runtime_error("Failed to read knowhere doc ids sidecar payload: " + path);
+        }
+    }
+
+    char trailing = 0;
+    if (reader.read(&trailing, 1)) {
+        throw std::runtime_error("Knowhere doc ids sidecar has trailing data: " + path);
+    }
+
+    return ids;
+}
+
+std::unordered_map<int64_t, int64_t>
+BuildExternalToInternalMap(const std::vector<int64_t>& internal_to_external) {
+    std::unordered_map<int64_t, int64_t> external_to_internal;
+    external_to_internal.reserve(internal_to_external.size());
+
+    for (size_t internal_id = 0; internal_id < internal_to_external.size(); ++internal_id) {
+        const auto external_id = internal_to_external[internal_id];
+        auto [it, inserted] = external_to_internal.emplace(external_id, static_cast<int64_t>(internal_id));
+        if (!inserted) {
+            throw std::runtime_error("Duplicate external doc id in knowhere doc ids sidecar: " + std::to_string(external_id));
+        }
+    }
+
+    return external_to_internal;
 }
 
 bool
@@ -122,8 +241,6 @@ IsBoolJsonKey(const std::string& key) {
     return key == "accelerate_build" || key == "warm_up" || key == "use_bfs_cache" || key == "use_mmap" ||
            key == "trace_visit";
 }
-
-constexpr float kBytesPerGiB = 1024.0f * 1024.0f * 1024.0f;
 
 void
 NormalizeDiskannBudgetParams(knowhere::Json& json, int64_t rows, int64_t dim) {
@@ -233,6 +350,8 @@ MergeJavaMapIntoJson(JNIUtilInterface* jniUtil, JNIEnv* env, jobject mapJ, knowh
                 json[knowhere::meta::METRIC_TYPE] = NormalizeMetricType(value);
             } else if (key == "path") {
                 json[knowhere::meta::INDEX_PREFIX] = value;
+            } else if (key == "search_list") {
+                json["search_list_size"] = std::stoi(value);
             } else if (IsIntJsonKey(key)) {
                 json[key] = std::stoi(value);
             } else if (IsFloatJsonKey(key)) {
@@ -376,6 +495,177 @@ ReadManifest(const std::filesystem::path& manifest_path) {
     return info;
 }
 
+void
+SetBit(std::vector<uint8_t>& bits, size_t bit_index) {
+    bits[bit_index >> 3] |= static_cast<uint8_t>(1U << (bit_index & 0x7));
+}
+
+void
+ClearBit(std::vector<uint8_t>& bits, size_t bit_index) {
+    bits[bit_index >> 3] &= static_cast<uint8_t>(~(1U << (bit_index & 0x7)));
+}
+
+bool
+TestBit(const std::vector<uint8_t>& bits, size_t bit_index) {
+    return (bits[bit_index >> 3] & static_cast<uint8_t>(1U << (bit_index & 0x7))) != 0;
+}
+
+bool
+IsBitmapBitSet(const jlong* words, size_t word_count, int64_t bit_index) {
+    if (words == nullptr || bit_index < 0) {
+        return false;
+    }
+
+    const size_t normalized_index = static_cast<size_t>(bit_index);
+    const size_t word_index = normalized_index / 64;
+    if (word_index >= word_count) {
+        return false;
+    }
+
+    const uint64_t word = static_cast<uint64_t>(words[word_index]);
+    return (word & (uint64_t{1} << (normalized_index % 64))) != 0;
+}
+
+FilterState
+BuildFilterState(const LoadedKnowhereIndex& holder, const jlong* filtered_ids, size_t filtered_ids_length, jint filter_ids_type) {
+    FilterState state;
+    state.num_bits = holder.internal_to_external.size();
+    state.allowed_count = state.num_bits;
+
+    if (filtered_ids == nullptr) {
+        return state;
+    }
+
+    if (state.num_bits == 0) {
+        state.allowed_count = 0;
+        return state;
+    }
+
+    const size_t num_bytes = (state.num_bits + 7) >> 3;
+    if (filter_ids_type == kFilterTypeBitmap) {
+        state.excluded_bits.assign(num_bytes, 0);
+        state.allowed_count = 0;
+        for (size_t internal_id = 0; internal_id < state.num_bits; ++internal_id) {
+            const int64_t external_id = holder.internal_to_external[internal_id];
+            if (IsBitmapBitSet(filtered_ids, filtered_ids_length, external_id)) {
+                ++state.allowed_count;
+                continue;
+            }
+            SetBit(state.excluded_bits, internal_id);
+            ++state.filtered_out_count;
+        }
+    } else if (filter_ids_type == kFilterTypeBatch) {
+        state.excluded_bits.assign(num_bytes, 0xFF);
+        state.allowed_count = 0;
+        for (size_t idx = 0; idx < filtered_ids_length; ++idx) {
+            const auto it = holder.external_to_internal.find(filtered_ids[idx]);
+            if (it == holder.external_to_internal.end()) {
+                continue;
+            }
+            const size_t internal_id = static_cast<size_t>(it->second);
+            if (!TestBit(state.excluded_bits, internal_id)) {
+                continue;
+            }
+            ClearBit(state.excluded_bits, internal_id);
+            ++state.allowed_count;
+        }
+        state.filtered_out_count = state.num_bits - state.allowed_count;
+    } else {
+        throw std::runtime_error("Unsupported knowhere filter ids type: " + std::to_string(filter_ids_type));
+    }
+
+    if (state.filtered_out_count == 0) {
+        state.excluded_bits.clear();
+    }
+    return state;
+}
+
+jint
+ToJIntId(int64_t id, const std::string& description) {
+    if (id < std::numeric_limits<jint>::min() || id > std::numeric_limits<jint>::max()) {
+        throw std::runtime_error("Knowhere " + description + " exceeds jint range: " + std::to_string(id));
+    }
+    return static_cast<jint>(id);
+}
+
+int64_t
+ResolveParentId(const std::vector<int64_t>& parent_ids, int64_t child_doc_id) {
+    auto it = std::lower_bound(parent_ids.begin(), parent_ids.end(), child_doc_id);
+    if (it == parent_ids.end()) {
+        throw std::runtime_error("Failed to resolve knowhere child doc " + std::to_string(child_doc_id) + " to a parent doc");
+    }
+    return *it;
+}
+
+std::vector<SearchResultEntry>
+TranslateSearchResults(const LoadedKnowhereIndex& holder,
+                       const int64_t* ids,
+                       const float* dists,
+                       int raw_result_size,
+                       jint requested_k,
+                       const std::vector<int64_t>& parent_ids) {
+    std::vector<SearchResultEntry> results;
+    if (ids == nullptr || dists == nullptr || raw_result_size <= 0) {
+        return results;
+    }
+
+    const size_t max_results = static_cast<size_t>(requested_k);
+    if (parent_ids.empty()) {
+        results.reserve(std::min(static_cast<size_t>(raw_result_size), max_results));
+        for (int i = 0; i < raw_result_size; ++i) {
+            if (ids[i] == -1) {
+                break;
+            }
+            const auto internal_id = static_cast<size_t>(ids[i]);
+            if (internal_id >= holder.internal_to_external.size()) {
+                throw std::runtime_error("Knowhere returned an internal id outside the loaded doc id map: " + std::to_string(ids[i]));
+            }
+            results.push_back({ ToJIntId(holder.internal_to_external[internal_id], "document id"), dists[i] });
+            if (results.size() >= max_results) {
+                break;
+            }
+        }
+        return results;
+    }
+
+    results.reserve(std::min(static_cast<size_t>(raw_result_size), max_results));
+    std::unordered_set<int64_t> seen_parents;
+    seen_parents.reserve(parent_ids.size());
+    for (int i = 0; i < raw_result_size; ++i) {
+        if (ids[i] == -1) {
+            break;
+        }
+        const auto internal_id = static_cast<size_t>(ids[i]);
+        if (internal_id >= holder.internal_to_external.size()) {
+            throw std::runtime_error("Knowhere returned an internal id outside the loaded doc id map: " + std::to_string(ids[i]));
+        }
+        const int64_t child_doc_id = holder.internal_to_external[internal_id];
+        const int64_t parent_doc_id = ResolveParentId(parent_ids, child_doc_id);
+        if (!seen_parents.insert(parent_doc_id).second) {
+            continue;
+        }
+        results.push_back({ ToJIntId(child_doc_id, "document id"), dists[i] });
+        if (results.size() >= max_results) {
+            break;
+        }
+    }
+    return results;
+}
+
+jobjectArray
+BuildQueryResultsArray(JNIUtilInterface* jniUtil, JNIEnv* env, const std::vector<SearchResultEntry>& entries) {
+    jclass resultClass = jniUtil->FindClass(env, "org/opensearch/knn/index/query/KNNQueryResult");
+    jmethodID allArgs = jniUtil->FindMethod(env, "org/opensearch/knn/index/query/KNNQueryResult", "<init>");
+
+    jobjectArray results = jniUtil->NewObjectArray(env, entries.size(), resultClass, nullptr);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        jobject result = jniUtil->NewObject(env, resultClass, allArgs, entries[i].id, entries[i].distance);
+        jniUtil->SetObjectArrayElement(env, results, static_cast<jsize>(i), result);
+        env->DeleteLocalRef(result);
+    }
+    return results;
+}
+
 }  // namespace
 
 void InitLibrary() {
@@ -487,16 +777,27 @@ void CreateIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jintArray idsJ, jlong v
     auto index = expected_index.value();
     auto status = index.Build(*dataset, json);
     LOG(INFO) << "[KNN][KNOWHERE][CreateIndex] build_status=" << knowhere::Status2String(status);
-    LOG(INFO) << "[KNN][KNOWHERE][CreateIndex] added_files_count=" << file_manager->AddedFiles().size();
-    for (const auto& added_file : file_manager->AddedFiles()) {
-        LOG(INFO) << "[KNN][KNOWHERE][CreateIndex] added_file=" << added_file;
-    }
 
     knn_jni::commons::freeVectorData(vectorsAddressJ);
 
     if (status != knowhere::Status::success) {
         throw std::runtime_error("Failed to build knowhere index: " + knowhere::Status2String(status));
     }
+
+    const std::string doc_ids_path = GetDocIdsPath(local_index_prefix);
+    WriteDocIdsFile(doc_ids_path, ids64);
+    if (!file_manager->AddFile(doc_ids_path)) {
+        throw std::runtime_error("Failed to register knowhere doc ids sidecar with file manager: " + doc_ids_path);
+    }
+    for (const auto& optional_path : GetAdditionalDiskannSidecarPaths(local_index_prefix)) {
+        RegisterOptionalBuildArtifact(*file_manager, optional_path);
+    }
+
+    LOG(INFO) << "[KNN][KNOWHERE][CreateIndex] added_files_count=" << file_manager->AddedFiles().size();
+    for (const auto& added_file : file_manager->AddedFiles()) {
+        LOG(INFO) << "[KNN][KNOWHERE][CreateIndex] added_file=" << added_file;
+    }
+
     if (!file_manager->SyncTrackedFilesToDirectory()) {
         throw std::runtime_error("Failed to copy knowhere artifacts into Lucene directory");
     }
@@ -541,6 +842,12 @@ jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, job
     for (const auto& manifest_file : manifest.files) {
         LOG(INFO) << "[KNN][KNOWHERE][LoadIndex] manifest_file_entry=" << manifest_file;
     }
+
+    const std::string required_doc_ids_file = std::filesystem::path(GetDocIdsPath(manifest.index_prefix)).filename().string();
+    if (std::find(manifest.files.begin(), manifest.files.end(), required_doc_ids_file) == manifest.files.end()) {
+        throw std::runtime_error("Knowhere manifest is missing required doc ids sidecar: " + required_doc_ids_file);
+    }
+
     const bool use_compound_sidecars = HasSuffix(context.file_name, ".knowherec");
     if (!file_manager->MaterializeFilesFromDirectory(manifest.files, use_compound_sidecars)) {
         throw std::runtime_error("Failed to copy knowhere artifacts from Lucene directory for manifest " + context.file_name);
@@ -558,6 +865,8 @@ jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, job
     holder->file_manager = std::static_pointer_cast<knowhere::FileManager>(file_manager);
     holder->index = expected_index.value();
     holder->local_data_dir = local_data_dir;
+    holder->internal_to_external = ReadDocIdsFile((local_data_dir / required_doc_ids_file).string());
+    holder->external_to_internal = BuildExternalToInternalMap(holder->internal_to_external);
 
     knowhere::BinarySet binary_set;
     LOG(INFO) << "[KNN][KNOWHERE][LoadIndex] params_after_manifest=" << json.dump();
@@ -568,43 +877,106 @@ jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, job
         throw std::runtime_error("Failed to load knowhere index from manifest " + context.file_name + ": " + knowhere::Status2String(status));
     }
 
+    const int64_t vector_count = holder->index.Count();
+    if (vector_count != static_cast<int64_t>(holder->internal_to_external.size())) {
+        throw std::runtime_error(
+            "Knowhere loaded vector count does not match doc ids sidecar: count=" + std::to_string(vector_count)
+                + " sidecar=" + std::to_string(holder->internal_to_external.size())
+        );
+    }
+
     return reinterpret_cast<jlong>(holder.release());
 }
 
-jobjectArray QueryIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jlong indexPointerJ, jfloatArray queryVectorJ, jint kJ, jobject methodParamsJ) {
-    auto holder = reinterpret_cast<LoadedKnowhereIndex*>(indexPointerJ);
-    auto& index = holder->index;
+jobjectArray QueryIndex(
+    JNIUtilInterface* jniUtil,
+    JNIEnv* env,
+    jlong indexPointerJ,
+    jfloatArray queryVectorJ,
+    jint kJ,
+    jobject methodParamsJ,
+    jlongArray filterIdsJ,
+    jint filterIdsTypeJ,
+    jintArray parentIdsJ
+) {
+    if (queryVectorJ == nullptr) {
+        throw std::runtime_error("Query Vector cannot be null");
+    }
 
-    jfloat* queryVector = env->GetFloatArrayElements(queryVectorJ, nullptr);
-    auto dataset = knowhere::GenDataSet(1, index.Dim(), queryVector);
+    auto holder = reinterpret_cast<LoadedKnowhereIndex*>(indexPointerJ);
+    if (holder == nullptr) {
+        throw std::runtime_error("Invalid pointer to index");
+    }
+
+    if (kJ <= 0) {
+        return BuildQueryResultsArray(jniUtil, env, {});
+    }
+
+    jfloat* queryVector = jniUtil->GetFloatArrayElements(env, queryVectorJ, nullptr);
+    JNIReleaseElements release_query([&]() { jniUtil->ReleaseFloatArrayElements(env, queryVectorJ, queryVector, JNI_ABORT); });
+    auto dataset = knowhere::GenDataSet(1, holder->index.Dim(), queryVector);
 
     knowhere::Json json = MapToJson(jniUtil, env, methodParamsJ);
     json[knowhere::meta::TOPK] = static_cast<int>(kJ);
     json[knowhere::meta::METRIC_TYPE] = json.value(knowhere::meta::METRIC_TYPE, "L2");
 
-    auto expected_res = index.Search(*dataset, json, knowhere::BitsetView());
-    env->ReleaseFloatArrayElements(queryVectorJ, queryVector, JNI_ABORT);
+    std::vector<int64_t> parent_ids;
+    if (parentIdsJ != nullptr) {
+        parent_ids = jniUtil->ConvertJavaIntArrayToCppIntVector(env, parentIdsJ);
+        if (!std::is_sorted(parent_ids.begin(), parent_ids.end())) {
+            throw std::runtime_error("Knowhere parent ids must be sorted");
+        }
+    }
 
+    jlong* filtered_ids = nullptr;
+    std::unique_ptr<JNIReleaseElements> release_filter_ids;
+    size_t filtered_ids_length = 0;
+    if (filterIdsJ != nullptr) {
+        filtered_ids = jniUtil->GetLongArrayElements(env, filterIdsJ, nullptr);
+        release_filter_ids = std::make_unique<JNIReleaseElements>([&]() {
+            jniUtil->ReleaseLongArrayElements(env, filterIdsJ, filtered_ids, JNI_ABORT);
+        });
+        filtered_ids_length = static_cast<size_t>(jniUtil->GetJavaLongArrayLength(env, filterIdsJ));
+    }
+
+    const FilterState filter_state = BuildFilterState(*holder, filtered_ids, filtered_ids_length, filterIdsTypeJ);
+    if (filterIdsJ != nullptr && filter_state.allowed_count == 0) {
+        return BuildQueryResultsArray(jniUtil, env, {});
+    }
+
+    if (!parent_ids.empty()) {
+        const int64_t nested_topk = filterIdsJ == nullptr ? static_cast<int64_t>(holder->internal_to_external.size())
+                                                          : static_cast<int64_t>(filter_state.allowed_count);
+        if (nested_topk == 0) {
+            return BuildQueryResultsArray(jniUtil, env, {});
+        }
+        if (nested_topk > std::numeric_limits<int>::max()) {
+            throw std::runtime_error("Knowhere nested query topk exceeds supported integer range: " + std::to_string(nested_topk));
+        }
+        json[knowhere::meta::TOPK] = static_cast<int>(nested_topk);
+        if (json.contains("search_list_size") && json["search_list_size"].is_number_integer()) {
+            const int current_search_list_size = json["search_list_size"].get<int>();
+            if (current_search_list_size < nested_topk) {
+                json["search_list_size"] = static_cast<int>(nested_topk);
+            }
+        }
+    }
+
+    auto expected_res = holder->index.Search(*dataset, json, filter_state.View());
     if (!expected_res.has_value()) {
         throw std::runtime_error("Failed to search knowhere index: " + knowhere::Status2String(expected_res.error()));
     }
 
     auto res = expected_res.value();
-    const int64_t* ids = res->GetIds();
-    const float* dists = res->GetDistance();
-    int resultSize = static_cast<int>(res->GetDim());
-
-    jclass resultClass = jniUtil->FindClass(env, "org/opensearch/knn/index/query/KNNQueryResult");
-    jmethodID allArgs = jniUtil->FindMethod(env, "org/opensearch/knn/index/query/KNNQueryResult", "<init>");
-
-    jobjectArray results = jniUtil->NewObjectArray(env, resultSize, resultClass, nullptr);
-
-    for (int i = 0; i < resultSize; ++i) {
-        jobject result = jniUtil->NewObject(env, resultClass, allArgs, static_cast<jint>(ids[i]), dists[i]);
-        jniUtil->SetObjectArrayElement(env, results, i, result);
-    }
-
-    return results;
+    auto translated = TranslateSearchResults(
+        *holder,
+        res->GetIds(),
+        res->GetDistance(),
+        static_cast<int>(res->GetDim()),
+        kJ,
+        parent_ids
+    );
+    return BuildQueryResultsArray(jniUtil, env, translated);
 }
 
 void Free(jlong indexPointerJ) {

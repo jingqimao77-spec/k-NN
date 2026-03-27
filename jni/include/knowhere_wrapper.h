@@ -26,7 +26,17 @@ void CreateIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jintArray idsJ, jlong v
 
 jlong LoadIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jobject readStreamJ, jobject parametersJ);
 
-jobjectArray QueryIndex(JNIUtilInterface* jniUtil, JNIEnv* env, jlong indexPointerJ, jfloatArray queryVectorJ, jint kJ, jobject methodParamsJ);
+jobjectArray QueryIndex(
+    JNIUtilInterface* jniUtil,
+    JNIEnv* env,
+    jlong indexPointerJ,
+    jfloatArray queryVectorJ,
+    jint kJ,
+    jobject methodParamsJ,
+    jlongArray filterIdsJ,
+    jint filterIdsTypeJ,
+    jintArray parentIdsJ
+);
 
 void Free(jlong indexPointerJ);
 

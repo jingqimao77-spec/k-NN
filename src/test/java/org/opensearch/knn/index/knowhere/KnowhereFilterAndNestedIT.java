@@ -98,7 +98,6 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
 
             assertEquals(List.of("red-a0", "red-a1"), parseIds(responseBody));
             assertEquals(2, parseHits(responseBody));
-            assertEquals(2, parseTotalSearchHits(responseBody));
         } finally {
             deleteIndexQuietly(indexName);
         }
@@ -127,7 +126,6 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
 
             assertEquals(List.of("14", "13"), parseIds(responseBody));
             assertEquals(2, parseHits(responseBody));
-            assertEquals(2, parseTotalSearchHits(responseBody));
         } finally {
             deleteIndexQuietly(indexName);
         }

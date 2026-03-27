@@ -69,7 +69,15 @@ class KnowhereService {
      * @param methodParameters query parameters
      * @return KNNQueryResult array of k neighbors
      */
-    public static native KNNQueryResult[] queryIndex(long indexPointer, float[] queryVector, int k, Map<String, ?> methodParameters);
+    public static native KNNQueryResult[] queryIndex(
+        long indexPointer,
+        float[] queryVector,
+        int k,
+        Map<String, ?> methodParameters,
+        long[] filteredIds,
+        int filterIdsType,
+        int[] parentIds
+    );
 
     /**
      * Free native memory pointer

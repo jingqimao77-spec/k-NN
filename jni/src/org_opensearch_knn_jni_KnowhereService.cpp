@@ -60,9 +60,29 @@ JNIEXPORT jlong JNICALL Java_org_opensearch_knn_jni_KnowhereService_loadIndex(JN
     return 0;
 }
 
-JNIEXPORT jobjectArray JNICALL Java_org_opensearch_knn_jni_KnowhereService_queryIndex(JNIEnv *env, jclass cls, jlong indexPointerJ, jfloatArray queryVectorJ, jint kJ, jobject methodParamsJ) {
+JNIEXPORT jobjectArray JNICALL Java_org_opensearch_knn_jni_KnowhereService_queryIndex(
+    JNIEnv *env,
+    jclass cls,
+    jlong indexPointerJ,
+    jfloatArray queryVectorJ,
+    jint kJ,
+    jobject methodParamsJ,
+    jlongArray filterIdsJ,
+    jint filterIdsTypeJ,
+    jintArray parentIdsJ
+) {
     try {
-        return knn_jni::knowhere_wrapper::QueryIndex(&jniUtil, env, indexPointerJ, queryVectorJ, kJ, methodParamsJ);
+        return knn_jni::knowhere_wrapper::QueryIndex(
+            &jniUtil,
+            env,
+            indexPointerJ,
+            queryVectorJ,
+            kJ,
+            methodParamsJ,
+            filterIdsJ,
+            filterIdsTypeJ,
+            parentIdsJ
+        );
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }

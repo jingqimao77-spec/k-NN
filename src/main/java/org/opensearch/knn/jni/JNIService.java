@@ -317,7 +317,15 @@ public class JNIService {
         }
 
         if (KNNEngine.KNOWHERE == knnEngine) {
-            return KnowhereService.queryIndex(indexPointer, queryVector, k, methodParameters);
+            return KnowhereService.queryIndex(
+                indexPointer,
+                queryVector,
+                k,
+                methodParameters,
+                ArrayUtils.isEmpty(filteredIds) ? null : filteredIds,
+                filterIdsType,
+                parentIds
+            );
         }
 
         throw new IllegalArgumentException(

@@ -45,10 +45,10 @@ JNIEXPORT jlong JNICALL Java_org_opensearch_knn_jni_KnowhereService_loadIndex
 /*
  * Class:     org_opensearch_knn_jni_KnowhereService
  * Method:    queryIndex
- * Signature: (J[FILjava/util/Map;)[Lorg/opensearch/knn/index/query/KNNQueryResult;
+ * Signature: (J[FILjava/util/Map;[JI[I)[Lorg/opensearch/knn/index/query/KNNQueryResult;
  */
 JNIEXPORT jobjectArray JNICALL Java_org_opensearch_knn_jni_KnowhereService_queryIndex
-  (JNIEnv *, jclass, jlong, jfloatArray, jint, jobject);
+  (JNIEnv *, jclass, jlong, jfloatArray, jint, jobject, jlongArray, jint, jintArray);
 
 /*
  * Class:     org_opensearch_knn_jni_KnowhereService
