@@ -91,11 +91,18 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
-# Statically link BLAS - ensure this is before we find the blas package so we dont dynamically link
+# Statically link BLAS/LAPACK when system archives are available.
 set(BLA_STATIC ON)
-find_package(BLAS REQUIRED)
-# enable_language(Fortran)
-find_package(LAPACK REQUIRED)
+find_library(OPENBLAS_STATIC NAMES openblas PATHS /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu NO_DEFAULT_PATH)
+find_library(LAPACK_STATIC NAMES lapack PATHS /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu NO_DEFAULT_PATH)
+if(OPENBLAS_STATIC AND LAPACK_STATIC)
+    set(BLAS_LIBRARIES ${OPENBLAS_STATIC})
+    set(LAPACK_LIBRARIES ${LAPACK_STATIC})
+else()
+    find_package(BLAS REQUIRED)
+    # enable_language(Fortran)
+    find_package(LAPACK REQUIRED)
+endif()
 
 # Set relevant properties
 set(BUILD_TESTING OFF)          # Avoid building faiss tests
