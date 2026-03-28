@@ -1,0 +1,43 @@
+{
+  "settings": {
+    "index": {
+      "knn": true,
+      "knn.advanced.filtered_exact_search_threshold": 0
+      {%- if target_index_primary_shards is defined and target_index_primary_shards %}
+      ,"number_of_shards": {{ target_index_primary_shards }}
+      {%- endif %}
+      {%- if target_index_replica_shards is defined %}
+      ,"number_of_replicas": {{ target_index_replica_shards }}
+      {%- endif %}
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "target_field": {
+        "type": "knn_vector",
+        "dimension": {{ target_index_dimension }},
+        "doc_values": true,
+        "mode": "on_disk",
+        "compression_level": "1x",
+        "method": {
+          "name": "diskann",
+          "space_type": "{{ target_index_space_type }}",
+          "engine": "knowhere",
+          "parameters": {
+            "build_dram_budget_gb": 4.0
+          }
+        }
+      },
+      "color": {
+        "type": "text"
+      },
+      "taste": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}

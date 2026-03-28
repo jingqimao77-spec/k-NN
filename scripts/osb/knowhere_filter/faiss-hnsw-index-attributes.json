@@ -1,0 +1,41 @@
+{
+  "settings": {
+    "index": {
+      "knn": true,
+      "knn.advanced.filtered_exact_search_threshold": 0
+      {%- if target_index_primary_shards is defined and target_index_primary_shards %}
+      ,"number_of_shards": {{ target_index_primary_shards }}
+      {%- endif %}
+      {%- if target_index_replica_shards is defined %}
+      ,"number_of_replicas": {{ target_index_replica_shards }}
+      {%- endif %}
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "target_field": {
+        "type": "knn_vector",
+        "dimension": {{ target_index_dimension }},
+        "method": {
+          "name": "hnsw",
+          "space_type": "{{ target_index_space_type }}",
+          "engine": "faiss",
+          "parameters": {
+            "ef_search": {{ hnsw_ef_search }},
+            "ef_construction": {{ hnsw_ef_construction }}
+          }
+        }
+      },
+      "color": {
+        "type": "text"
+      },
+      "taste": {
+        "type": "text"
+      },
+      "age": {
+        "type": "integer"
+      }
+    }
+  }
+}
