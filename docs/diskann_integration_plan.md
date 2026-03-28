@@ -75,6 +75,43 @@
 
 ---
 
+## 0.1 冻结 ID 语义与映射策略（阻断后续）
+
+**术语冻结**
+- `internal_id`：DiskANN/graph 内部连续编号
+- `external_id`：上层系统希望看到的编号
+- `segment docID`：OpenSearch 场景下的 `external_id`
+- 在 OpenSearch 集成中，`external_id == segment docID`
+
+**策略冻结**
+- 参考 Faiss `IDMap` 思路，为 knowhere DiskANN 增加可选的 `IDMap-like` 能力。
+- DiskANN 内部仍使用连续 `internal_id` 建图与搜索，不直接将 OpenSearch `ids` 写成 graph label 语义。
+- OpenSearch build 输入的 `ids` 是 `segment docID`，由 knowhere 负责 `internal_id <-> external_id` 映射。
+- 当 OpenSearch 启用映射时，knowhere 统一对外暴露 `segment docID` 语义：
+  - search 返回值按 `segment docID`
+  - filter bitset 检查按 `segment docID`
+  - by-id 接口按 `segment docID`
+- 映射能力是 knowhere 的**可选能力**，不是全局默认行为。
+- 对 Milvus 等已在上层做 offset/id 映射的系统，默认关闭该能力，保持现有 internal/offset 语义不变。
+
+**文件管理冻结**
+- DiskANN ID 映射采用 sidecar 文件方案，作为引擎伴随文件由 manifest 管理。
+- sidecar id map 文件参与 compound / non-compound / snapshot / restore / replica 全生命周期。
+- manifest 负责记录该 sidecar 文件，避免多文件场景下遗漏。
+
+**设计结论（基线表述）**
+- “参考 Faiss `IDMap` 思路，为 knowhere DiskANN 增加可选的 `IDMap-like` 能力。DiskANN 内部仍使用连续 `internal_id` 建图与搜索；当启用映射时，knowhere 负责将 `internal_id` 映射为上层 `external_id`，并统一作用于 search 返回值、filter bitset 检查以及 by-id 接口。对 OpenSearch，`external_id` 定义为 segment docID；对 Milvus 等已在上层做 offset/id 映射的系统，默认关闭该能力，保持现有 internal/offset 语义不变。”
+
+**产出**
+- ID 语义与映射策略文档基线
+
+**验证**
+- 参与成员一致确认：
+  - OpenSearch 模式下结果/过滤统一按 `segment docID`
+  - 非 OpenSearch 上层默认不受影响
+
+---
+
 ## 1. Java 层引擎/方法与参数支持
 
 **依赖**：0 完成  
@@ -105,6 +142,7 @@
   - 必需文件列表
   - 可选文件列表
   - 每个文件的 size（可选 hash）
+- 新增 DiskANN id map sidecar 文件记录，作为 required engine sidecar 纳入 manifest
 - JNI C++ 实现 `OpenSearchFileManager`：
   - `AddFile`: 本地 DiskANN 文件写入 Lucene Directory
   - `LoadFile`: 从 Lucene Directory 读回本地 prefix
@@ -135,6 +173,10 @@
 - `JNIService` routing 增加 `KNNEngine.KNOWHERE`
 - build: `data_path` + `index_prefix`
 - load: 先按 manifest `LoadFile` 到本地，再 `Deserialize`
+- knowhere build/load/query 路径增加 ID 映射职责：
+  - build 接收 OpenSearch `segment docID`
+  - load 读取 id map sidecar
+  - query 返回映射后的 `segment docID`
 
 **验证**
 - JNI UT：Build → Load → Search 正常
@@ -179,6 +221,8 @@
 - Load：按 manifest 下载到本地 prefix
 - Search：JNI query 路径
 - 支持Filter
+- filter bitset 语义按 `segment docID`
+- query result 语义按 `segment docID`
 
 **验证**
 - ANN search 返回 topK

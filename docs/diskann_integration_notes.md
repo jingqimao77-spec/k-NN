@@ -116,3 +116,36 @@
 - 忘记通过 Lucene Directory 写文件 → SegmentInfo 不记录 → Snapshot/Replica 丢失文件
 - 只记录固定文件名 → DiskANN 新增文件时遗漏
 - mmap 开启但 DiskANN 未实现 `DeserializeFromFile` → Load 失败
+
+---
+
+## 9. docID / internal id / bitset 语义澄清
+
+**术语统一**
+- `internal_id`：DiskANN/graph 内部连续编号
+- `external_id`：上层系统希望看到的编号
+- `segment docID`：OpenSearch 场景下的 `external_id`
+- 在 OpenSearch 集成中，`external_id == segment docID`
+
+**Faiss 参考**
+- Faiss 在 k‑NN 中通过 `IndexIDMap` 直接返回外部 id。
+- 这说明“底层索引保持内部编号、外层补一层映射语义”是可行方案。
+
+**Knowhere DiskANN 当前现状**
+- knowhere DiskANN 当前 `Search()` 返回的是 DiskANN internal label，而不是天然返回 OpenSearch `segment docID`。
+- `internal_id_to_most_external_id_map_` 目前主要用于 bitset/filter 检查，不等于“查询结果已完成映射”。
+- 因此不能假设当前 knowhere DiskANN 天然满足 OpenSearch 的 docID 语义契约。
+
+**Milvus 参考**
+- Milvus 中 bitset 默认是 row/offset 空间，不是业务主键空间。
+- 上层若存在 offset mapping，会先 `TransformBitset` 再传给 knowhere，结果出来后再 `TransformOffset`。
+- 这说明 Milvus 的常规做法是把映射控制权留在上层，而不是要求 knowhere 默认输出外部 id。
+
+**OpenSearch 结论**
+- OpenSearch 不能假设当前 knowhere DiskANN 天然返回 `segment docID`。
+- OpenSearch 的方案是为 DiskANN 增加可选 `IDMap-like` 能力，并在 knowhere 内完成 `internal_id <-> external_id` 映射。
+- 当该能力启用时，knowhere 统一对外暴露 `segment docID` 语义，覆盖：
+  - search 返回值
+  - filter bitset 检查
+  - by-id 接口
+- 对 Milvus 等已在上层完成映射的系统，默认关闭该能力，保持现有 internal/offset 语义不变。
