@@ -22,11 +22,11 @@
 #include <limits>
 #include <memory>
 #include <ostream>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace google {
@@ -45,6 +45,7 @@ void MakeCheckOpValueString(std::ostream* os, const T& v);
 #include "knowhere/expected.h"
 #include "knowhere/index/index.h"
 #include "knowhere/index/index_factory.h"
+#include "knowhere_grouping_util.h"
 #include "knowhere/object.h"
 #include "opensearch_file_manager.h"
 #include "commons.h"
@@ -61,6 +62,8 @@ struct LoadedKnowhereIndex {
     std::filesystem::path local_data_dir;
     std::vector<int64_t> internal_to_external;
     std::unordered_map<int64_t, int64_t> external_to_internal;
+    std::shared_ptr<GroupingCache> grouping_cache;
+    mutable std::shared_mutex grouping_cache_mutex;
 };
 
 struct TempDirGuard {
@@ -588,13 +591,31 @@ ToJIntId(int64_t id, const std::string& description) {
     return static_cast<jint>(id);
 }
 
-int64_t
-ResolveParentId(const std::vector<int64_t>& parent_ids, int64_t child_doc_id) {
-    auto it = std::lower_bound(parent_ids.begin(), parent_ids.end(), child_doc_id);
-    if (it == parent_ids.end()) {
-        throw std::runtime_error("Failed to resolve knowhere child doc " + std::to_string(child_doc_id) + " to a parent doc");
+std::shared_ptr<GroupingCache>
+BuildOrGetGroupingCache(LoadedKnowhereIndex& holder, const std::vector<int64_t>& parent_ids_sorted) {
+    const uint64_t cache_key = HashParentIds(parent_ids_sorted);
+    {
+        std::shared_lock<std::shared_mutex> lock(holder.grouping_cache_mutex);
+        if (
+            holder.grouping_cache != nullptr && holder.grouping_cache->cache_key == cache_key
+            && holder.grouping_cache->parent_segment_doc_ids == parent_ids_sorted
+        ) {
+            return holder.grouping_cache;
+        }
     }
-    return *it;
+
+    auto rebuilt_cache = std::make_shared<GroupingCache>(BuildGroupingCache(holder.internal_to_external, parent_ids_sorted));
+    {
+        std::unique_lock<std::shared_mutex> lock(holder.grouping_cache_mutex);
+        if (
+            holder.grouping_cache != nullptr && holder.grouping_cache->cache_key == cache_key
+            && holder.grouping_cache->parent_segment_doc_ids == parent_ids_sorted
+        ) {
+            return holder.grouping_cache;
+        }
+        holder.grouping_cache = rebuilt_cache;
+        return holder.grouping_cache;
+    }
 }
 
 std::vector<SearchResultEntry>
@@ -602,35 +623,14 @@ TranslateSearchResults(const LoadedKnowhereIndex& holder,
                        const int64_t* ids,
                        const float* dists,
                        int raw_result_size,
-                       jint requested_k,
-                       const std::vector<int64_t>& parent_ids) {
+                       jint requested_k) {
     std::vector<SearchResultEntry> results;
     if (ids == nullptr || dists == nullptr || raw_result_size <= 0) {
         return results;
     }
 
     const size_t max_results = static_cast<size_t>(requested_k);
-    if (parent_ids.empty()) {
-        results.reserve(std::min(static_cast<size_t>(raw_result_size), max_results));
-        for (int i = 0; i < raw_result_size; ++i) {
-            if (ids[i] == -1) {
-                break;
-            }
-            const auto internal_id = static_cast<size_t>(ids[i]);
-            if (internal_id >= holder.internal_to_external.size()) {
-                throw std::runtime_error("Knowhere returned an internal id outside the loaded doc id map: " + std::to_string(ids[i]));
-            }
-            results.push_back({ ToJIntId(holder.internal_to_external[internal_id], "document id"), dists[i] });
-            if (results.size() >= max_results) {
-                break;
-            }
-        }
-        return results;
-    }
-
     results.reserve(std::min(static_cast<size_t>(raw_result_size), max_results));
-    std::unordered_set<int64_t> seen_parents;
-    seen_parents.reserve(parent_ids.size());
     for (int i = 0; i < raw_result_size; ++i) {
         if (ids[i] == -1) {
             break;
@@ -639,12 +639,7 @@ TranslateSearchResults(const LoadedKnowhereIndex& holder,
         if (internal_id >= holder.internal_to_external.size()) {
             throw std::runtime_error("Knowhere returned an internal id outside the loaded doc id map: " + std::to_string(ids[i]));
         }
-        const int64_t child_doc_id = holder.internal_to_external[internal_id];
-        const int64_t parent_doc_id = ResolveParentId(parent_ids, child_doc_id);
-        if (!seen_parents.insert(parent_doc_id).second) {
-            continue;
-        }
-        results.push_back({ ToJIntId(child_doc_id, "document id"), dists[i] });
+        results.push_back({ ToJIntId(holder.internal_to_external[internal_id], "document id"), dists[i] });
         if (results.size() >= max_results) {
             break;
         }
@@ -921,10 +916,19 @@ jobjectArray QueryIndex(
     json[knowhere::meta::METRIC_TYPE] = json.value(knowhere::meta::METRIC_TYPE, "L2");
 
     std::vector<int64_t> parent_ids;
+    std::shared_ptr<GroupingCache> grouping_cache;
     if (parentIdsJ != nullptr) {
         parent_ids = jniUtil->ConvertJavaIntArrayToCppIntVector(env, parentIdsJ);
         if (!std::is_sorted(parent_ids.begin(), parent_ids.end())) {
             throw std::runtime_error("Knowhere parent ids must be sorted");
+        }
+        if (!parent_ids.empty()) {
+            grouping_cache = BuildOrGetGroupingCache(*holder, parent_ids);
+            dataset->Set<uint64_t>(
+                kGroupSearchInternalToParentOrdAddressKey,
+                static_cast<uint64_t>(reinterpret_cast<std::uintptr_t>(grouping_cache->internal_to_parent_ord.data()))
+            );
+            dataset->Set<uint64_t>(kGroupSearchParentCountKey, static_cast<uint64_t>(grouping_cache->parent_segment_doc_ids.size()));
         }
     }
 
@@ -944,24 +948,6 @@ jobjectArray QueryIndex(
         return BuildQueryResultsArray(jniUtil, env, {});
     }
 
-    if (!parent_ids.empty()) {
-        const int64_t nested_topk = filterIdsJ == nullptr ? static_cast<int64_t>(holder->internal_to_external.size())
-                                                          : static_cast<int64_t>(filter_state.allowed_count);
-        if (nested_topk == 0) {
-            return BuildQueryResultsArray(jniUtil, env, {});
-        }
-        if (nested_topk > std::numeric_limits<int>::max()) {
-            throw std::runtime_error("Knowhere nested query topk exceeds supported integer range: " + std::to_string(nested_topk));
-        }
-        json[knowhere::meta::TOPK] = static_cast<int>(nested_topk);
-        if (json.contains("search_list_size") && json["search_list_size"].is_number_integer()) {
-            const int current_search_list_size = json["search_list_size"].get<int>();
-            if (current_search_list_size < nested_topk) {
-                json["search_list_size"] = static_cast<int>(nested_topk);
-            }
-        }
-    }
-
     auto expected_res = holder->index.Search(*dataset, json, filter_state.View());
     if (!expected_res.has_value()) {
         throw std::runtime_error("Failed to search knowhere index: " + knowhere::Status2String(expected_res.error()));
@@ -973,8 +959,7 @@ jobjectArray QueryIndex(
         res->GetIds(),
         res->GetDistance(),
         static_cast<int>(res->GetDim()),
-        kJ,
-        parent_ids
+        kJ
     );
     return BuildQueryResultsArray(jniUtil, env, translated);
 }

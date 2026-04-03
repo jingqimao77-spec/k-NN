@@ -190,6 +190,7 @@ function(find_conan_library_prefer_static OUT_VAR PACKAGE STATIC_GLOB DYNAMIC_GL
     endif()
 endfunction()
 find_conan_library_prefer_static(FOLLY_LIB folly "lib/libfolly.a" "lib/libfolly.so*")
+find_conan_library_prefer_static(BOOST_CONTEXT_LIB boost "lib/libboost_context.a" "lib/libboost_context.so*")
 find_conan_library_prefer_static(GLOG_LIB glog "lib/libglog.a" "lib/libglog.so*")
 find_conan_library_prefer_static(GFLAGS_LIB gflags "lib/libgflags_nothreads.a" "lib/libgflags_nothreads.so*")
 find_conan_optional_path(FMT_LIB fmt "lib/libfmt.a")
@@ -256,6 +257,7 @@ target_link_libraries(${TARGET_LIB_KNOWHERE}
     -Wl,--no-whole-archive
     ${KNOWHERE_LIB_DIR}/libfaiss.a
     ${FOLLY_LIB}
+    ${BOOST_CONTEXT_LIB}
     ${GLOG_LIB}
     ${GFLAGS_LIB}
     ${FMT_LIB}
@@ -384,17 +386,24 @@ if (${CONFIG_TEST} STREQUAL ON OR ${CONFIG_ALL} STREQUAL ON)
                 OpenMP::OpenMP_CXX
                 ${TARGET_LIB_FAISS}
                 ${TARGET_LIB_NMSLIB}
+                ${TARGET_LIB_KNOWHERE}
                 ${TARGET_LIB_COMMON}
                 ${TARGET_LIB_UTIL}
                 # Knowhere dependencies
-                knowhere
-                common
-                fmt
-                folly
-                glog
-                gflags_nothreads
-                crypto
-                ssl
+                ${KNOWHERE_LIB_DIR}/libknowhere.a
+                ${KNOWHERE_LIB_DIR}/libmilvus-common.a
+                ${KNOWHERE_LIB_DIR}/libfaiss.a
+                ${KNOWHERE_LIB_DIR}/libdiskann.a
+                ${KNOWHERE_LIB_DIR}/libknowhere_utils.a
+                ${FOLLY_LIB}
+                ${BOOST_CONTEXT_LIB}
+                ${GLOG_LIB}
+                ${GFLAGS_LIB}
+                ${FMT_LIB}
+                ${OPENSSL_CRYPTO_LIB}
+                ${OPENSSL_SSL_LIB}
+                ${KNOWHERE_THIRDPARTY_LIBS}
+                ${AIO_LIB}
         )
 
         target_include_directories(jni_test PRIVATE

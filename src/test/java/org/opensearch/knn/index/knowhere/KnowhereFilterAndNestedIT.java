@@ -5,6 +5,7 @@
 
 package org.opensearch.knn.index.knowhere;
 
+import com.google.common.collect.Multimap;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -28,7 +29,16 @@ import java.util.Map;
 
 import static org.opensearch.knn.common.KNNConstants.COMPRESSION_LEVEL_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.DISKANN_BUILD_DRAM_BUDGET_GB;
+import static org.opensearch.knn.common.KNNConstants.EXPAND_NESTED;
+import static org.opensearch.knn.common.Constants.FIELD_FILTER;
+import static org.opensearch.knn.common.Constants.FIELD_TERM;
+import static org.opensearch.knn.common.KNNConstants.K;
+import static org.opensearch.knn.common.KNNConstants.KNN;
 import static org.opensearch.knn.common.KNNConstants.METHOD_DISKANN;
+import static org.opensearch.knn.common.KNNConstants.PATH;
+import static org.opensearch.knn.common.KNNConstants.QUERY;
+import static org.opensearch.knn.common.KNNConstants.TYPE_NESTED;
+import static org.opensearch.knn.common.KNNConstants.VECTOR;
 import static org.opensearch.knn.common.KNNConstants.MODE_PARAMETER;
 
 public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
@@ -40,6 +50,8 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
     private static final String NESTED_FIELD_NAME = "test_nested";
     private static final String NESTED_VECTOR_FIELD_NAME = "test_vector";
     private static final String PARKING_FIELD_NAME = "parking";
+    private static final String STORAGE_FIELD_NAME = "storage";
+    private static final String INNER_HITS = "inner_hits";
     private static final String FIELD_VALUE_TRUE = "true";
     private static final String FIELD_VALUE_FALSE = "false";
 
@@ -154,6 +166,39 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
         }
     }
 
+    public void testExpandNestedDocsWithKnowhere_whenFilterAppliedOnNestedField_thenReturnFilteredNestedDocs() throws Exception {
+        String indexName = newIndexName("test-index-knowhere-nested-expand");
+
+        try {
+            createNestedKnowhereIndex(indexName, 1);
+            addNestedDocWithMetadata(indexName, "1", 100.0f, List.of(FIELD_VALUE_FALSE, FIELD_VALUE_FALSE));
+            addNestedDocWithMetadata(indexName, "2", 0.0f, List.of(FIELD_VALUE_TRUE, FIELD_VALUE_TRUE));
+            addNestedDocWithMetadata(indexName, "3", 10.0f, List.of(FIELD_VALUE_TRUE, FIELD_VALUE_FALSE));
+            refreshIndex(indexName);
+            forceMergeKnnIndex(indexName);
+
+            Response response = searchKNNIndex(
+                indexName,
+                createExpandNestedQuery(
+                    new float[] { 0.0f },
+                    10,
+                    NESTED_FIELD_NAME + "." + STORAGE_FIELD_NAME,
+                    FIELD_VALUE_TRUE
+                ),
+                10
+            );
+            String responseBody = EntityUtils.toString(response.getEntity());
+
+            Multimap<String, Integer> docIdToOffsets = parseInnerHits(responseBody, NESTED_FIELD_NAME);
+            assertEquals(2, docIdToOffsets.keySet().size());
+            assertEquals(2, docIdToOffsets.get("2").size());
+            assertEquals(1, docIdToOffsets.get("3").size());
+            assertTrue(docIdToOffsets.get("3").contains(0));
+        } finally {
+            deleteIndexQuietly(indexName);
+        }
+    }
+
     private void createFilteredKnowhereIndex(String indexName, int shardCount) throws Exception {
         Settings settings = Settings.builder()
             .put(getKNNDefaultIndexSettings())
@@ -220,6 +265,9 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
             .endObject()
             .endObject()
             .endObject()
+            .startObject(STORAGE_FIELD_NAME)
+            .field("type", "keyword")
+            .endObject()
             .endObject()
             .endObject()
             .startObject(PARKING_FIELD_NAME)
@@ -253,6 +301,14 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
         addKnnDoc(indexName, docId, doc);
     }
 
+    private void addNestedDocWithMetadata(String indexName, String docId, float value, List<String> storageValues) throws IOException {
+        NestedKnnDocBuilder builder = NestedKnnDocBuilder.create(NESTED_FIELD_NAME);
+        for (String storageValue : storageValues) {
+            builder.addVectorWithMetadata(NESTED_VECTOR_FIELD_NAME, new Float[] { value }, STORAGE_FIELD_NAME, storageValue);
+        }
+        addKnnDoc(indexName, docId, builder.build());
+    }
+
     private String createFilteredQuery(float[] queryVector, int k) throws IOException {
         return KNNJsonQueryBuilder.builder()
             .fieldName(FIELD_NAME)
@@ -262,6 +318,35 @@ public class KnowhereFilterAndNestedIT extends KNNRestTestCase {
             .filterValue(FILTER_VALUE_RED)
             .build()
             .getQueryString();
+    }
+
+    private String createExpandNestedQuery(float[] queryVector, int k, String filterFieldName, String filterValue) throws IOException {
+        return XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject(QUERY)
+            .startObject(TYPE_NESTED)
+            .field(PATH, NESTED_FIELD_NAME)
+            .startObject(QUERY)
+            .startObject(KNN)
+            .startObject(NESTED_FIELD_NAME + "." + NESTED_VECTOR_FIELD_NAME)
+            .field(VECTOR, queryVector)
+            .field(K, k)
+            .field(EXPAND_NESTED, true)
+            .startObject(FIELD_FILTER)
+            .startObject(FIELD_TERM)
+            .field(filterFieldName, filterValue)
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject()
+            .field(INNER_HITS)
+            .startObject()
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject()
+            .toString();
     }
 
     private String createNestedQuery(float[] queryVector, int k, String filterFieldName, String filterValue) throws IOException {
